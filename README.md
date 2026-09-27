@@ -1,7 +1,10 @@
 # ゾンビひなこシューティング
 
 夜の町で、ゾンビになって歩いてくるひなこを銃で撃って倒す一人称ガンシューティング。
-[ひなこシューティング](../hinako-shooting) の写真・音・画面のしくみを元にしている。
+[ひなこシューティング](https://github.com/TakamoriTomoya/hinako-shooting) の写真・音・画面のしくみを元にしている。
+
+あそぶ: https://hinako-zombie.vercel.app
+(`main` に push すると Vercel に自動でデプロイされる)
 
 ```sh
 npm install
