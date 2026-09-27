@@ -13,6 +13,12 @@ export const CAMERA_HEIGHT_M = 1.6; // 目の高さ
 export const ROAD_HALF_WIDTH_M = 3.5; // 車道の半分の幅
 export const SIDEWALK_WIDTH_M = 2; // 歩道の幅(車道の外側)
 
+// ---- 歩く・向きを変える ----
+export const PLAYER_SPEED = 3.2; // 歩く速さ
+export const PLAYER_RADIUS = 0.45; // 建物や車にぶつかる大きさ
+export const TURN_SPEED = 2.2; // キーで向きを変える速さ(ラジアン/秒)
+export const DRAG_TURN_GAIN = 1; // ドラッグした距離に対して向きを変える量(1: 景色が指にぴったりついてくる)
+
 // ---- プレイヤー ----
 export const PLAYER_START_LIVES = 5;
 export const PLAYER_INVINCIBLE_MS = 1200; // かじられた直後の無敵時間
@@ -30,19 +36,26 @@ export const HEAD_DAMAGE = 3; // 頭に当てると3倍(ふつうのゾンビは
 
 // ---- ゾンビ ----
 export const ZOMBIE_HEIGHT_M = 1.6; // sizeScale=1 のゾンビの高さ
-export const SPAWN_Z_MIN = 16; // この距離の範囲で、霧の奥から出てくる
-export const SPAWN_Z_MAX = 20;
-export const SPAWN_X_MAX_M = 3; // 出てくる横の位置(道のまん中から左右に)
-export const ATTACK_Z = 2.4; // ここまで近づくと、かみつこうとする
+export const SPAWN_Z_MAX = 20; // これより遠くには出てこない(遠くは霧で見えない)
+export const ATTACK_Z = 2.2; // ここまで近づくと、かみつこうとする(プレイヤーからの距離)
+export const BITE_REACH = 3; // かみつく瞬間に、プレイヤーがこれより離れていればよけられる
+export const ZOMBIE_RADIUS = 0.35; // ゾンビ同士がかさならないための大きさ
 export const ATTACK_WINDUP_MS = 750; // かみつく前の予備動作(この間に倒せばかじられない)
 export const BITE_KNOCKBACK_M = 2.5; // かみついた後、これだけ後ろへ下がる
 export const HIT_STAGGER_MS = 220; // 弾が当たってよろける時間(その間は進まない)
 export const HIT_STAGGER_BACK_M = 0.35; // よろけて下がる距離
 export const HIT_FLASH_MS = 80;
 export const DYING_MS = 550; // 倒れて消えるまで
-export const FOG_START_Z = 11; // これより遠くは霧で薄く見える
-// 近づいた時に画面の外へはみ出さないよう、かみつく距離で画面の中央からこの割合以内に寄ってくる
-export const LANE_SCREEN_RATIO = 0.28;
+// ゾンビの出てき方
+// far: 道の奥の霧から / gap: 建物のすき間や曲がり角・横の道から / door: 家やお店のドアから /
+// prop: 止まっている車などのかげから立ち上がる / ground: 近くの地面から這い出てくる
+export type EntryKind = "far" | "gap" | "door" | "prop" | "ground";
+export const ENTER_SPEED = 1.3; // 路地などから道へ出てくる速さ
+export const EMERGE_MS = 700; // ドアの暗がりから姿をあらわすまで
+export const RISE_MS = 1100; // かげや地面から立ち上がるまで
+export const HORDE_MIN = 3; // 群れでまとめて出てくる数
+export const HORDE_MAX = 5;
+export const HORDE_STAGGER_MS = 380; // 群れの1体ずつの間隔
 
 export type ZombieKind = "walker" | "runner" | "tank";
 
@@ -55,12 +68,13 @@ export const HEADSHOT_BONUS = 100;
 
 // ---- ボス ----
 export const BOSS_HEIGHT_M = 3.4;
-export const BOSS_STAND_Z = 6.5; // ここまで歩いてきて止まり、ものを投げてくる
-export const BOSS_CHARGE_Z = 3.6; // 突進してきて、ここでかみつく
+export const BOSS_STAND_Z = 6.5; // プレイヤーからこれくらい離れたところで止まり、ものを投げてくる
+export const BOSS_CHARGE_Z = 3.2; // 突進してきて、この距離でかみつく
 export const BOSS_CHARGE_SPEED = 4.5;
 export const BOSS_CHARGE_STOP_DAMAGE = 12; // 突進中にこれだけダメージを与えると、ひるんで止まる
 export const BOSS_HEAD_MULTIPLIER = 2; // ボスは頭(弱点)に当てるとHEAD_DAMAGEのさらに2倍
-export const PROJECTILE_FLIGHT_MS = 1700; // 投げたものが目の前に届くまで
+export const PROJECTILE_FLIGHT_MS = 1700; // 投げたものが落ちてくるまで(その間に歩いてよけられる)
+export const PROJECTILE_HIT_RADIUS_M = 1.2; // 落ちた所からこれより近くにいると当たる
 export const PROJECTILE_RADIUS_M = 0.28;
 export const PROJECTILE_MIN_HIT_PX = 22; // 遠くて小さい時でも、これくらいの半径なら撃ち落とせる
 export const BOSS_SCORE_PER_STAGE = 5000;
@@ -70,12 +84,14 @@ export const PROJECTILE_SCORE = 50;
 export interface StageDef {
   place: string; // 「STAGE 1」の下に出す場所の名前
   bgm: "venus" | "mars" | "mercury";
-  waveMs: number; // ザコ戦の長さ。これが過ぎるとボスが来る
+  // 場所ごとのザコ戦の長さ。1ステージは3つの場所を順に進み、最後の場所ではザコ戦の後にボスが来る
+  areaWaveMs: [number, number, number];
   spawnStartMs: number; // ザコの出てくる間隔(始め)
   spawnEndMs: number; // ザコの出てくる間隔(終わり)。だんだん短くなる
   maxAlive: number; // 同時に出ているザコの上限
   kinds: Partial<Record<ZombieKind, number>>; // 出てくる種類の重み
   groupMax: number; // 一度に何体まで一緒に出てくるか
+  hordeMs: number; // 群れがまとめて押し寄せてくる間隔
   bossHp: number;
   bossThrowMs: number; // ボスがものを投げる間隔
   bossChargeMs: number; // ボスが突進してくる間隔
@@ -86,12 +102,13 @@ export const STAGES: StageDef[] = [
   {
     place: "ゆうぐれの じゅうたくがい",
     bgm: "venus",
-    waveMs: 30000,
+    areaWaveMs: [22000, 22000, 10000],
     spawnStartMs: 2400,
     spawnEndMs: 1300,
     maxAlive: 5,
     kinds: { walker: 1 },
     groupMax: 1,
+    hordeMs: 14000,
     bossHp: 60,
     bossThrowMs: 2600,
     bossChargeMs: 12000,
@@ -100,12 +117,13 @@ export const STAGES: StageDef[] = [
   {
     place: "よるの しょうてんがい",
     bgm: "mars",
-    waveMs: 35000,
+    areaWaveMs: [24000, 24000, 12000],
     spawnStartMs: 2000,
     spawnEndMs: 1000,
     maxAlive: 7,
     kinds: { walker: 3, runner: 1 },
     groupMax: 2,
+    hordeMs: 11000,
     bossHp: 90,
     bossThrowMs: 2100,
     bossChargeMs: 10000,
@@ -114,12 +132,13 @@ export const STAGES: StageDef[] = [
   {
     place: "まよなかの えきまえ",
     bgm: "mercury",
-    waveMs: 40000,
+    areaWaveMs: [26000, 26000, 14000],
     spawnStartMs: 1700,
     spawnEndMs: 800,
     maxAlive: 9,
     kinds: { walker: 4, runner: 2, tank: 1 },
     groupMax: 3,
+    hordeMs: 9000,
     bossHp: 130,
     bossThrowMs: 1700,
     bossChargeMs: 8500,
@@ -129,6 +148,9 @@ export const STAGES: StageDef[] = [
 
 // ---- 流れ ----
 export const STAGE_BANNER_MS = 2400; // 「STAGE 1」を出している時間
+export const MOVE_MS = 2200; // 次の場所へ移動する時間(暗くなって、着いたら明るくなる)
+export const EXIT_RADIUS_M = 2.6; // 出口にこれだけ近づくと次の場所へ進む
+export const ARRIVE_BANNER_MS = 1600; // 着いた場所の名前を出している時間
 export const BOSS_WARNING_MS = 3000;
 export const STAGE_CLEAR_MS = 2800;
 export const GAMEOVER_DELAY_MS = 1400;

@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ZombieEngine, type EngineState, type StartOptions } from "../lib/engine";
 import { loadMuted, SoundManager } from "../lib/sound";
 import { DEV_TOOLS, MAX_AMMO, PLAYER_START_LIVES } from "../lib/constants";
+import type { WeaponId } from "../lib/weapons";
 
 export function useZombieEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -14,10 +15,14 @@ export function useZombieEngine() {
     lives: PLAYER_START_LIVES,
     ammo: MAX_AMMO,
     reloading: false,
+    weapon: "pistol",
+    weaponAmmo: { mg: 0, rocket: 0, grenade: 0 },
     stage: 1,
+    areaName: "",
     stageBanner: null,
     bossHp: null,
     bossWarning: false,
+    exitOpen: false,
     hintVisible: false,
     highScore: 0,
     isNewRecord: false,
@@ -48,6 +53,8 @@ export function useZombieEngine() {
   const startGame = useCallback(() => engineRef.current?.startGame(DEV_TOOLS ? devStart : {}), [devStart]);
   const goHome = useCallback(() => engineRef.current?.goHome(), []);
   const reload = useCallback(() => engineRef.current?.reload(), []);
+  const move = useCallback((x: number, y: number) => engineRef.current?.setMoveInput(x, y), []);
+  const selectWeapon = useCallback((id: WeaponId) => engineRef.current?.selectWeapon(id), []);
   const toggleMuted = useCallback(() => {
     const sound = soundRef.current;
     if (!sound) return;
@@ -56,7 +63,7 @@ export function useZombieEngine() {
   }, []);
 
   // useEffect依存配列でactions全体を使えるよう、参照を安定させる
-  const actions = useMemo(() => ({ startGame, goHome, reload, toggleMuted, setDevStart }), [startGame, goHome, reload, toggleMuted]);
+  const actions = useMemo(() => ({ startGame, goHome, reload, move, selectWeapon, toggleMuted, setDevStart }), [startGame, goHome, reload, move, selectWeapon, toggleMuted]);
 
   return { canvasRef, state, muted, devStart, actions };
 }

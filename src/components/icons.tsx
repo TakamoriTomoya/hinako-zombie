@@ -72,3 +72,46 @@ export function HeartIcon(props: IconProps) {
     </Icon>
   );
 }
+
+// ---- 武器(塗りつぶしの小さな絵) ----
+
+export function PistolIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <path d="M3 7h15v4h-9l-1.5 7H4l1.5-7H3z" />
+      <rect x="17" y="6" width="3" height="2" rx="0.5" />
+    </Icon>
+  );
+}
+
+export function MachineGunIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <path d="M1 8h17v3H9l-1 3H6l.5-3H1z" />
+      <rect x="18" y="8.8" width="5" height="1.4" />
+      <path d="M9.5 11h2.5l-1 6H8.5z" />
+      <rect x="3" y="11" width="3" height="5" rx="0.8" />
+    </Icon>
+  );
+}
+
+export function RocketIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <rect x="2" y="8" width="17" height="5" rx="1" />
+      <path d="M19 7.5l4 3-4 3z" />
+      <rect x="7" y="13" width="2.5" height="4" rx="0.5" />
+      <rect x="12" y="13" width="2.5" height="3" rx="0.5" />
+    </Icon>
+  );
+}
+
+export function GrenadeIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <ellipse cx="11" cy="14.5" rx="6" ry="7" />
+      <rect x="8.5" y="5" width="5" height="3" rx="0.8" />
+      <circle cx="17" cy="5.5" r="2.2" fill="none" stroke="currentColor" strokeWidth={1.6} />
+    </Icon>
+  );
+}

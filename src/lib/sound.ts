@@ -10,7 +10,7 @@ import { SOUND_MUTED_STORAGE_KEY } from "./constants";
 
 export type BgmId = "map" | "venus" | "mars" | "mercury" | "boss";
 export type JingleId = "intro" | "warp" | "win";
-export type SfxId = "shot" | "empty" | "reload" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver";
+export type SfxId = "shot" | "empty" | "reload" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver" | "mg" | "rocket" | "explosion" | "toss" | "pickup" | "switch" | "clank" | "step";
 
 // lengthは元のWAVでの正確な長さ(秒)。AACに変換すると末尾にわずかな無音が付くことがあるので、
 // ファイルの長さではなくこの長さでループさせて、継ぎ目で途切れないようにする
@@ -37,6 +37,7 @@ const SFX_MIN_INTERVAL_SEC: Partial<Record<SfxId, number>> = {
   hit: 0.04,
   defeat: 0.04,
   groan: 1.2, // ゾンビがたくさん出てきても、うめき声はときどきだけ
+  explosion: 0.05,
 };
 
 const UNLOCK_EVENTS = ["pointerdown", "keydown", "touchend", "click"] as const;
@@ -207,6 +208,45 @@ export class SoundManager {
         // 拳銃の「パンッ」。ノイズを一気にこもらせて、低い「ドン」を重ねる
         this.noise(now, { dur: 0.22, vol: 0.55, filterFrom: 6000, filterTo: 250 });
         this.tone(now, { type: "square", from: 190, to: 45, dur: 0.12, vol: 0.28 });
+        break;
+      case "mg":
+        // マシンガンの「タタタ」。拳銃より短く軽く
+        this.noise(now, { dur: 0.09, vol: 0.4, filterFrom: 5000, filterTo: 400 });
+        this.tone(now, { type: "square", from: 230, to: 70, dur: 0.06, vol: 0.18 });
+        break;
+      case "rocket":
+        // ロケットの発射「シュボッ」
+        this.noise(now, { dur: 0.45, vol: 0.45, filterFrom: 3500, filterTo: 500 });
+        this.tone(now, { type: "sawtooth", from: 140, to: 60, dur: 0.3, vol: 0.2 });
+        break;
+      case "explosion":
+        // 「ドカーン」。ザラザラした音を長く崩して、低い音を重ねる
+        this.crunch(now, { dur: 0.9, vol: 0.55, rateFrom: 0.9, rateTo: 0.08 });
+        this.noise(now, { dur: 1.0, vol: 0.45, filterFrom: 2500, filterTo: 80 });
+        this.tone(now, { type: "sine", from: 90, to: 30, dur: 0.8, vol: 0.5 });
+        break;
+      case "toss":
+        // 手榴弾を投げる「ヒュッ」
+        this.tone(now, { type: "sine", from: 350, to: 700, dur: 0.18, vol: 0.1 });
+        break;
+      case "pickup":
+        // 武器を拾った「テテテテーン」
+        [523, 659, 784, 1047].forEach((f, i) => this.tone(now + i * 0.06, { type: "square", from: f, to: f, dur: 0.08, vol: 0.09 }));
+        break;
+      case "switch":
+        // 持ちかえる「カチャッ」
+        this.tone(now, { type: "square", from: 900, to: 700, dur: 0.03, vol: 0.1 });
+        this.tone(now + 0.08, { type: "square", from: 1200, to: 1000, dur: 0.03, vol: 0.1 });
+        break;
+      case "step":
+        // 歩く足音「ザッ」
+        this.noise(now, { dur: 0.09, vol: 0.18, filterFrom: 1800, filterTo: 300 });
+        this.tone(now, { type: "triangle", from: 110, to: 60, dur: 0.07, vol: 0.18 });
+        break;
+      case "clank":
+        // 車などに当たってはじかれた「カンッ」
+        this.tone(now, { type: "square", from: 1500, to: 1100, dur: 0.05, vol: 0.08 });
+        this.tone(now, { type: "triangle", from: 2600, to: 2400, dur: 0.12, vol: 0.05 });
         break;
       case "empty":
         // 弾切れの「カチッ」

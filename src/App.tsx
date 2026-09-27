@@ -15,13 +15,19 @@ function App() {
       : state.phase === "playing"
         ? BattlePage({
             stage: state.stage,
+            areaName: state.areaName,
             stageBanner: state.stageBanner,
             score: state.score,
             lives: state.lives,
             ammo: state.ammo,
             reloading: state.reloading,
+            weapon: state.weapon,
+            weaponAmmo: state.weaponAmmo,
+            onSelectWeapon: actions.selectWeapon,
             bossHp: state.bossHp,
             bossWarning: state.bossWarning,
+            exitOpen: state.exitOpen,
+            onMove: actions.move,
             hintVisible: state.hintVisible,
             onReload: actions.reload,
           })
