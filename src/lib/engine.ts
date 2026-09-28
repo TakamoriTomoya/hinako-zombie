@@ -14,7 +14,9 @@ import {
   BOSS_SCORE_PER_STAGE,
   BOSS_STAND_Z,
   BOSS_WARNING_MS,
+  DRAG_PITCH_PER_SCREEN,
   DRAG_TURN_PER_SCREEN,
+  MAX_PITCH,
   MAX_TURN_VELOCITY,
   TURN_INERTIA_DECAY,
   DYING_MS,
@@ -352,6 +354,7 @@ export class ZombieEngine {
   private px = 0;
   private pz = 0;
   private yaw = 0;
+  private pitch = 0; // 上を向くと+
   private moveInput = { x: 0, y: 0 }; // 画面のスティック(-1〜1)
   private keys = new Set<string>();
   private walking = false;
@@ -552,6 +555,7 @@ export class ZombieEngine {
     this.px = 0;
     this.pz = 0;
     this.yaw = 0;
+    this.pitch = 0;
     this.zombies = [];
     this.projectiles = [];
     this.pendingSpawns = [];
@@ -993,7 +997,7 @@ export class ZombieEngine {
     }
 
     if (this.phase === "playing") this.updatePlayer(dt);
-    this.view = makeView(this.view.w, this.view.h, this.px, this.pz, this.yaw);
+    this.view = makeView(this.view.w, this.view.h, this.px, this.pz, this.yaw, this.pitch);
 
     if (this.phase === "home") this.updateWanderers(dt);
     if (this.phase === "playing") {
@@ -1640,7 +1644,7 @@ export class ZombieEngine {
       canvas.style.height = `${h}px`;
       this.dpr = dpr;
     }
-    this.view = makeView(w, h, this.px, this.pz, this.yaw);
+    this.view = makeView(w, h, this.px, this.pz, this.yaw, this.pitch);
   }
 
   private gunPose(): GunPose {
@@ -2328,6 +2332,8 @@ export class ZombieEngine {
       // 指を右へ動かすと右を向く(画面の幅に対してなぞった割合で回すので、短いスワイプでも大きく向きが変わる)
       const dyaw = ((x - t.lastX) / this.view.w) * DRAG_TURN_PER_SCREEN;
       this.yaw += dyaw;
+      // 指を上へ動かすと上を向く(少しだけ)
+      this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch - ((y - t.lastY) / this.view.h) * DRAG_PITCH_PER_SCREEN));
       const now = performance.now();
       const dtSec = Math.max(0.008, (now - t.lastMoveAt) / 1000);
       // なぞる速さ(少しなめらかにする)

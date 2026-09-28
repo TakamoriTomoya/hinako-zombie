@@ -22,6 +22,9 @@ export const DRAG_TURN_PER_SCREEN = 2.2;
 // はらうようになぞって離すと、その勢いのまま少し回り続ける。1秒でどれだけ勢いが落ちるか(大きいほどすぐ止まる)
 export const TURN_INERTIA_DECAY = 5;
 export const MAX_TURN_VELOCITY = 9; // 勢いの上限(ラジアン/秒)
+// 上下にドラッグすると、少しだけ見上げたり見下ろしたりできる
+export const DRAG_PITCH_PER_SCREEN = 1; // 画面の高さいっぱいなぞると、この角度(ラジアン)だけ上下を向く
+export const MAX_PITCH = 0.35; // 上下に向ける限界(およそ20°)
 
 // ---- プレイヤー ----
 export const PLAYER_START_LIVES = 5;

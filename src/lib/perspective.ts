@@ -16,12 +16,15 @@ export interface View {
   camX: number;
   camZ: number;
   yaw: number; // 右を向くと+(ラジアン)
+  pitch: number; // 上を向くと+(ラジアン)。地平線の高さを上下にずらして表す
   cos: number;
   sin: number;
 }
 
-export function makeView(w: number, h: number, camX = 0, camZ = 0, yaw = 0): View {
-  return { w, h, horizonY: h * HORIZON_RATIO, focal: h * FOCAL_RATIO, camX, camZ, yaw, cos: Math.cos(yaw), sin: Math.sin(yaw) };
+export function makeView(w: number, h: number, camX = 0, camZ = 0, yaw = 0, pitch = 0): View {
+  const focal = h * FOCAL_RATIO;
+  // 上を向くと景色は下へずれる(地平線が下がる)
+  return { w, h, horizonY: h * HORIZON_RATIO + Math.tan(pitch) * focal, focal, camX, camZ, yaw, pitch, cos: Math.cos(yaw), sin: Math.sin(yaw) };
 }
 
 // 世界の点をカメラから見た座標に直す。x: 右が+、z: 前方への距離(奥行き)

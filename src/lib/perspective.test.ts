@@ -41,6 +41,12 @@ describe("遠近の計算", () => {
     expect(project(turned, 0, 0, 7).x).toBeLessThan(200);
   });
 
+  it("上を向くと、景色は下にずれる", () => {
+    const up = makeView(400, 800, 0, 0, 0, 0.2);
+    expect(up.horizonY).toBeGreaterThan(view.horizonY);
+    expect(project(up, 0, 0, 7).y).toBeGreaterThan(project(view, 0, 0, 7).y);
+  });
+
   it("歩いて近づくと大きく見える", () => {
     const walked = makeView(400, 800, 0, 3);
     expect(depthOf(walked, 0, 7)).toBeCloseTo(4);
