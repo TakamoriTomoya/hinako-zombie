@@ -31,11 +31,19 @@ export function WeaponBar({ weapon, weaponAmmo, onSelect }: Props) {
             type="button"
             aria-label={WEAPONS[id].name}
             aria-pressed={selected}
-            className={`pointer-events-auto relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border-2 transition-transform duration-100 active:scale-[0.92] ${
+            className={`pointer-events-auto relative flex h-11 w-11 cursor-pointer touch-none items-center justify-center rounded-xl border-2 transition-transform duration-100 active:scale-[0.92] ${
               selected ? "border-white bg-white/30" : "border-transparent bg-black/35 hover:bg-black/50"
             }`}
             style={{ color: WEAPONS[id].color }}
-            onClick={() => onSelect(id)}
+            // 歩くスティックを押しながらでも押せるよう、ふれた瞬間に持ちかえる
+            // (ほかの指が画面にふれていると、スマホではクリックが起きないことがある)。キーボードで押した時は onClick で
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onSelect(id);
+            }}
+            onClick={(e) => {
+              if (e.detail === 0) onSelect(id);
+            }}
           >
             <Icon size={26} />
             {id !== "pistol" && (

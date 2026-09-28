@@ -55,6 +55,20 @@
     @apply m-0 flex justify-center bg-bg-outer text-text-dark font-body;
   }
 
+  /* ゲーム中に長押しすると、文字が選択されたり「コピー」などのメニューが出たりしないようにする */
+  html,
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  img,
+  canvas {
+    -webkit-user-drag: none;
+  }
+
   /* bodyのdisplay:flexの子として幅がshrink-to-fitになり、
      width:100%指定の子孫が0幅に潰れてしまうため明示する */
   #root {

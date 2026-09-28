@@ -2325,9 +2325,8 @@ export class ZombieEngine {
     }
     if (t.mode === "pending" && Math.hypot(x - t.startX, y - t.startY) > TAP_MOVE_PX) t.mode = "drag";
     if (t.mode === "drag") {
-      // 景色を指でつかんで動かす: 指を右へ動かすと景色も右へ動く(左を向く)
-      // 画面の幅に対してなぞった割合で回す(短いスワイプでも大きく向きが変わる)
-      const dyaw = -((x - t.lastX) / this.view.w) * DRAG_TURN_PER_SCREEN;
+      // 指を右へ動かすと右を向く(画面の幅に対してなぞった割合で回すので、短いスワイプでも大きく向きが変わる)
+      const dyaw = ((x - t.lastX) / this.view.w) * DRAG_TURN_PER_SCREEN;
       this.yaw += dyaw;
       const now = performance.now();
       const dtSec = Math.max(0.008, (now - t.lastMoveAt) / 1000);

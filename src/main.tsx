@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
+// 長押しや右クリックで出るメニュー(コピーなど)を出さない。ゲームの操作のじゃまになるので
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
