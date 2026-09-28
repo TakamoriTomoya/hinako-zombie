@@ -17,11 +17,19 @@ export const SIDEWALK_WIDTH_M = 2; // 歩道の幅(車道の外側)
 export const PLAYER_SPEED = 3.2; // 歩く速さ
 export const PLAYER_RADIUS = 0.45; // 建物や車にぶつかる大きさ
 export const TURN_SPEED = 2.2; // キーで向きを変える速さ(ラジアン/秒)
-export const DRAG_TURN_GAIN = 1; // ドラッグした距離に対して向きを変える量(1: 景色が指にぴったりついてくる)
+// ドラッグで向きを変える量。画面の幅いっぱいなぞると、この角度(ラジアン)だけ向きが変わる(2.2 でおよそ125°)
+export const DRAG_TURN_PER_SCREEN = 2.2;
+// はらうようになぞって離すと、その勢いのまま少し回り続ける。1秒でどれだけ勢いが落ちるか(大きいほどすぐ止まる)
+export const TURN_INERTIA_DECAY = 5;
+export const MAX_TURN_VELOCITY = 9; // 勢いの上限(ラジアン/秒)
 
 // ---- プレイヤー ----
 export const PLAYER_START_LIVES = 5;
 export const PLAYER_INVINCIBLE_MS = 1200; // かじられた直後の無敵時間
+// ハート: 倒したゾンビがたまに落とす。撃つか上を歩くと拾えて、ライフが1ふえる
+export const HEART_DROP_CHANCE = 0.08;
+export const HEART_ROAD_CHANCE = 0.3; // 道に箱が置かれる時、ライフが減っていればこの割合でハートになる
+export const HEART_FULL_BONUS = 500; // ライフが満タンの時に拾うと、かわりに点数
 export const HURT_FLASH_MS = 600; // かじられた時に画面が赤くなる時間
 export const SHAKE_MS = 350;
 

@@ -10,7 +10,7 @@ import { SOUND_MUTED_STORAGE_KEY } from "./constants";
 
 export type BgmId = "map" | "venus" | "mars" | "mercury" | "boss";
 export type JingleId = "intro" | "warp" | "win";
-export type SfxId = "shot" | "empty" | "reload" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver" | "mg" | "rocket" | "explosion" | "toss" | "pickup" | "switch" | "clank" | "step";
+export type SfxId = "shot" | "empty" | "reload" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver" | "mg" | "rocket" | "explosion" | "toss" | "pickup" | "switch" | "clank" | "step" | "heal";
 
 // lengthは元のWAVでの正確な長さ(秒)。AACに変換すると末尾にわずかな無音が付くことがあるので、
 // ファイルの長さではなくこの長さでループさせて、継ぎ目で途切れないようにする
@@ -237,6 +237,10 @@ export class SoundManager {
         // 持ちかえる「カチャッ」
         this.tone(now, { type: "square", from: 900, to: 700, dur: 0.03, vol: 0.1 });
         this.tone(now + 0.08, { type: "square", from: 1200, to: 1000, dur: 0.03, vol: 0.1 });
+        break;
+      case "heal":
+        // ハートを拾った「ポロロン♪」
+        [659, 784, 988, 1319].forEach((f, i) => this.tone(now + i * 0.07, { type: "triangle", from: f, to: f, dur: 0.14, vol: 0.2 }));
         break;
       case "step":
         // 歩く足音「ザッ」

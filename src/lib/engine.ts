@@ -14,13 +14,18 @@ import {
   BOSS_SCORE_PER_STAGE,
   BOSS_STAND_Z,
   BOSS_WARNING_MS,
-  DRAG_TURN_GAIN,
+  DRAG_TURN_PER_SCREEN,
+  MAX_TURN_VELOCITY,
+  TURN_INERTIA_DECAY,
   DYING_MS,
   EMERGE_MS,
   ENTER_SPEED,
   EXIT_RADIUS_M,
   GAMEOVER_DELAY_MS,
   HEADSHOT_BONUS,
+  HEART_DROP_CHANCE,
+  HEART_FULL_BONUS,
+  HEART_ROAD_CHANCE,
   HINT_MS,
   HIT_FLASH_MS,
   HIT_STAGGER_BACK_M,
@@ -191,7 +196,7 @@ interface Projectile {
 
 // 落ちている武器の箱。撃つか、上を歩くと拾える
 interface Pickup {
-  weapon: SpecialWeaponId;
+  item: SpecialWeaponId | "heart";
   x: number;
   z: number;
   ageMs: number;
@@ -365,7 +370,8 @@ export class ZombieEngine {
   private isNewRecord = false;
 
   // 画面にふれている指(マウス)。動かさずに離せば撃つ、動かせば向きを変える、マシンガンは押し続けると連射
-  private touches = new Map<number, { startX: number; startY: number; lastX: number; lastY: number; downAt: number; mode: "pending" | "drag" | "fire" }>();
+  private touches = new Map<number, { startX: number; startY: number; lastX: number; lastY: number; downAt: number; mode: "pending" | "drag" | "fire"; lastMoveAt: number; turnVel: number }>();
+  private yawVel = 0; // はらったあとに回り続ける勢い(ラジアン/秒)
   private aimX = 0;
   private aimY = 0;
   private aimVisibleMs = 0;
@@ -698,6 +704,12 @@ export class ZombieEngine {
     if (this.keys.has("ArrowLeft") || this.keys.has("q")) turn -= 1;
     if (this.keys.has("ArrowRight") || this.keys.has("e")) turn += 1;
     this.yaw += turn * TURN_SPEED * sec;
+    // はらったあとの勢い(だんだん止まる)
+    if (this.yawVel !== 0) {
+      this.yaw += this.yawVel * sec;
+      this.yawVel *= Math.exp(-TURN_INERTIA_DECAY * sec);
+      if (Math.abs(this.yawVel) < 0.05) this.yawVel = 0;
+    }
 
     let mx = this.moveInput.x;
     let my = this.moveInput.y;
@@ -1473,16 +1485,16 @@ export class ZombieEngine {
         const x = this.px + Math.sin(a) * d;
         const z = this.pz + Math.cos(a) * d;
         if (this.walkableAt(x, z) && !this.blockedAt(x, z, 0.5)) {
-          this.dropPickup(x, z);
+          this.dropPickup(x, z, this.lives < PLAYER_START_LIVES && Math.random() < HEART_ROAD_CHANCE ? "heart" : undefined);
           break;
         }
       }
     }
   }
 
-  private dropPickup(x: number, z: number): void {
+  private dropPickup(x: number, z: number, item?: Pickup["item"]): void {
     if (this.pickups.length >= PICKUP_MAX_ALIVE) return;
-    const pickup: Pickup = { weapon: pickSpecialWeapon(Math.random()), x, z, ageMs: 0 };
+    const pickup: Pickup = { item: item ?? pickSpecialWeapon(Math.random()), x, z, ageMs: 0 };
     this.pickups.push(pickup);
     if (!this.pickupHintShown && depthOf(this.view, x, z) > 1) {
       this.pickupHintShown = true;
@@ -1493,10 +1505,22 @@ export class ZombieEngine {
 
   private collectPickup(p: Pickup): void {
     this.pickups = this.pickups.filter((q) => q !== p);
-    const def = WEAPONS[p.weapon];
-    this.weaponAmmo[p.weapon] = Math.min(def.maxAmmo, this.weaponAmmo[p.weapon] + def.pickupAmmo);
     const depth = depthOf(this.view, p.x, p.z);
     const at = depth > 0.5 ? project(this.view, p.x, 0.5, p.z) : { x: this.view.w / 2, y: this.view.h * 0.6 };
+    if (p.item === "heart") {
+      // ライフが1ふえる。満タンなら、かわりに点数
+      if (this.lives < PLAYER_START_LIVES) {
+        this.lives += 1;
+        this.popups.push({ x: at.x, y: at.y - 20, text: "ライフ +1", color: "#ff6f91", life: POPUP_MS * 1.5 });
+      } else {
+        this.addScore(HEART_FULL_BONUS, at.x, at.y - 20, "#ff6f91");
+      }
+      this.spawnBurst(at.x, at.y, ["#ff6f91", "#ffffff", "#ffb3c6"], 16, 1);
+      this.sound.playSfx("heal");
+      return;
+    }
+    const def = WEAPONS[p.item];
+    this.weaponAmmo[p.item] = Math.min(def.maxAmmo, this.weaponAmmo[p.item] + def.pickupAmmo);
     this.popups.push({ x: at.x, y: at.y - 20, text: `${def.name} ゲット!`, color: def.color, life: POPUP_MS * 1.5 });
     this.spawnBurst(at.x, at.y, [def.color, "#ffffff"], 14, 1);
     // 拾っても持ちかえない(持ちかえは画面のボタンか 1〜4 キーで)
@@ -1515,6 +1539,13 @@ export class ZombieEngine {
 
   private pickupHitRect(p: Pickup): Rect {
     const r = this.pickupRect(p);
+    if (p.item === "heart") {
+      // 浮いているハートのまわり
+      const groundY = project(this.view, p.x, 0, p.z).y;
+      const size = Math.max(PICKUP_MIN_HIT_PX, r.w * 1.4);
+      const hy = groundY - r.w * 1.1;
+      return { left: r.left + r.w / 2 - size / 2, top: hy - size / 2, w: size, h: size + r.w * 0.8 };
+    }
     const w = Math.max(PICKUP_MIN_HIT_PX, r.w * 1.3);
     const h = Math.max(PICKUP_MIN_HIT_PX, r.h * 1.3) + 18;
     return { left: r.left + r.w / 2 - w / 2, top: r.top + r.h - h + r.h * 0.15, w, h };
@@ -1529,7 +1560,10 @@ export class ZombieEngine {
       const def = ZOMBIE_KINDS[z.kind];
       const points = def.score + (z.lastHitHead ? HEADSHOT_BONUS : 0);
       this.addScore(points, rect.left + rect.w / 2, rect.top, "#ffffff");
-      if (Math.random() < DROP_CHANCE[z.kind] && !this.blockedAt(z.x, z.z, 0.3)) this.dropPickup(z.x, z.z);
+      if (!this.blockedAt(z.x, z.z, 0.3)) {
+        if (Math.random() < HEART_DROP_CHANCE) this.dropPickup(z.x, z.z, "heart");
+        else if (Math.random() < DROP_CHANCE[z.kind]) this.dropPickup(z.x, z.z);
+      }
     }
   }
 
@@ -1970,7 +2004,11 @@ export class ZombieEngine {
   private drawPickup(ctx: CanvasRenderingContext2D, p: Pickup): void {
     const left = PICKUP_LIFETIME_MS - p.ageMs;
     if (left < PICKUP_BLINK_MS && Math.floor(p.ageMs / 120) % 2 === 0) return;
-    const def = WEAPONS[p.weapon];
+    if (p.item === "heart") {
+      this.drawHeartPickup(ctx, p);
+      return;
+    }
+    const def = WEAPONS[p.item];
     const r = this.pickupRect(p);
     const cx = r.left + r.w / 2;
     const groundY = project(this.view, p.x, 0, p.z).y;
@@ -2001,6 +2039,44 @@ export class ZombieEngine {
     ctx.strokeText(def.name, cx, y);
     ctx.fillStyle = def.color;
     ctx.fillText(def.name, cx, y);
+  }
+
+  // 落ちているハート: 地面の少し上にふわふわ浮いて、足もとにピンクの輪
+  private drawHeartPickup(ctx: CanvasRenderingContext2D, p: Pickup): void {
+    const r = this.pickupRect(p);
+    const cx = r.left + r.w / 2;
+    const groundY = project(this.view, p.x, 0, p.z).y;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 0.008);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.35;
+    ctx.strokeStyle = "#ff6f91";
+    ctx.lineWidth = Math.max(2, r.w * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY, r.w * (0.8 + pulse * 0.2), r.w * 0.2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    // ハートの形(少し大きくなったり小さくなったりする)
+    const size = r.w * (0.9 + pulse * 0.12);
+    const hx = cx;
+    const hy = groundY - r.w * 1.1 - Math.sin(this.time * 0.004 + p.x) * r.w * 0.12;
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.scale(size / 100, size / 100);
+    ctx.beginPath();
+    ctx.moveTo(0, 35);
+    ctx.bezierCurveTo(-60, -5, -45, -60, 0, -30);
+    ctx.bezierCurveTo(45, -60, 60, -5, 0, 35);
+    ctx.closePath();
+    ctx.fillStyle = "#ff4d79";
+    ctx.fill();
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = "#fff0f5";
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(-18, -22, 9, 6, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // 出口の目印: 地面の光る輪と、上で上下する矢印
@@ -2226,7 +2302,9 @@ export class ZombieEngine {
       this.reload();
       return;
     }
-    this.touches.set(e.pointerId, { startX: x, startY: y, lastX: x, lastY: y, downAt: this.time, mode: "pending" });
+    this.touches.set(e.pointerId, { startX: x, startY: y, lastX: x, lastY: y, downAt: this.time, mode: "pending", lastMoveAt: performance.now(), turnVel: 0 });
+    // さわったら、回っている勢いは止める
+    this.yawVel = 0;
     try {
       this.canvas?.setPointerCapture(e.pointerId);
     } catch {
@@ -2248,7 +2326,14 @@ export class ZombieEngine {
     if (t.mode === "pending" && Math.hypot(x - t.startX, y - t.startY) > TAP_MOVE_PX) t.mode = "drag";
     if (t.mode === "drag") {
       // 景色を指でつかんで動かす: 指を右へ動かすと景色も右へ動く(左を向く)
-      this.yaw -= ((x - t.lastX) / this.view.focal) * DRAG_TURN_GAIN;
+      // 画面の幅に対してなぞった割合で回す(短いスワイプでも大きく向きが変わる)
+      const dyaw = -((x - t.lastX) / this.view.w) * DRAG_TURN_PER_SCREEN;
+      this.yaw += dyaw;
+      const now = performance.now();
+      const dtSec = Math.max(0.008, (now - t.lastMoveAt) / 1000);
+      // なぞる速さ(少しなめらかにする)
+      t.turnVel = t.turnVel * 0.5 + (dyaw / dtSec) * 0.5;
+      t.lastMoveAt = now;
     } else if (t.mode === "fire") {
       this.aimX = x;
       this.aimY = y;
@@ -2266,6 +2351,10 @@ export class ZombieEngine {
     const t = this.touches.get(e.pointerId);
     this.touches.delete(e.pointerId);
     if (e.pointerId === this.firePointerId) this.firePointerId = null;
+    // はらうようになぞって離したら、その勢いで回り続ける(止まってから離した時は回らない)
+    if (t?.mode === "drag" && performance.now() - t.lastMoveAt < 80) {
+      this.yawVel = Math.max(-MAX_TURN_VELOCITY, Math.min(MAX_TURN_VELOCITY, t.turnVel));
+    }
     if (!t || t.mode !== "pending" || this.phase !== "playing" || e.type === "pointercancel") return;
     this.aimX = t.lastX;
     this.aimY = t.lastY;
