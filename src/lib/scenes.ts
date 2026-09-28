@@ -61,6 +61,10 @@ export interface Region {
   z1: number;
 }
 
+export interface Trigger extends Region {
+  count: number;
+}
+
 export interface Lamp {
   x: number;
   z: number;
@@ -79,6 +83,9 @@ export interface Scene {
   spawnWeights: Record<EntryKind, number>; // どこから出てくるかの重み
   bossStart?: { x: number; z: number; portal?: number }; // ボスが出てくる所(portal は portals の番号)
   walkable: Region[]; // プレイヤーが歩ける範囲(どれかの四角の中)
+  // ゾンビが出てくる地点。プレイヤーがこの範囲に入ると、count 体がその場で出てくる(1回だけ)。
+  // 全部の地点を通って倒しきると出口が開く(ボスの場所ではボスが来る)
+  triggers: Trigger[];
   exit?: { x: number; z: number }; // ザコ戦が終わった後、ここまで歩くと次の場所へ進む
 }
 
@@ -181,6 +188,11 @@ const cornerStreet: Scene = {
   far: { x0: -2, x1: 2, z0: 14, z1: 16 },
   groundSpawn: { x0: -2, x1: 2, z0: 5, z1: 8 },
   spawnWeights: { far: 20, gap: 25, door: 20, prop: 20, ground: 15 },
+  triggers: [
+    { x0: -5, x1: 5, z0: -4, z1: 3, count: 3 },
+    { x0: -5, x1: 5, z0: 6, z1: 10, count: 4 },
+    { x0: 3, x1: 30, z0: 8.8, z1: 17.5, count: 5 },
+  ],
   walkable: [
     { x0: -5, x1: 5, z0: -4, z1: 17.5 },
     { x0: 5, x1: 30, z0: 8.8, z1: 17.5 },
@@ -230,6 +242,11 @@ const park: Scene = {
   far: { x0: -1.2, x1: 1.2, z0: 20, z1: 22 },
   groundSpawn: { x0: -5, x1: 5, z0: 4.5, z1: 7 },
   spawnWeights: { far: 20, gap: 22, door: 10, prop: 30, ground: 18 },
+  triggers: [
+    { x0: -11, x1: 11, z0: -4, z1: 3, count: 3 },
+    { x0: -11, x1: 11, z0: 7, z1: 13, count: 4 },
+    { x0: -11, x1: 11, z0: 16, z1: 23.5, count: 5 },
+  ],
   walkable: [{ x0: -11, x1: 11, z0: -4, z1: 23.5 }],
   exit: { x: 0, z: 22.5 },
 };
@@ -271,6 +288,11 @@ const tJunctionSchool: Scene = {
   groundSpawn: { x0: -2, x1: 2, z0: 4.5, z1: 8 },
   spawnWeights: { far: 0, gap: 35, door: 25, prop: 20, ground: 20 },
   bossStart: { x: -9, z: 17.5, portal: 0 },
+  triggers: [
+    { x0: -5, x1: 5, z0: -4, z1: 3, count: 3 },
+    { x0: -5, x1: 5, z0: 6, z1: 12, count: 4 },
+    { x0: -30, x1: 30, z0: 12.3, z1: 22.5, count: 5 },
+  ],
   walkable: [
     { x0: -5, x1: 5, z0: -4, z1: 22.5 },
     { x0: -30, x1: 30, z0: 12.3, z1: 22.5 },
@@ -319,6 +341,11 @@ const scramble: Scene = {
   far: { x0: -1.5, x1: 1.5, z0: 16, z1: 20 },
   groundSpawn: { x0: -2, x1: 2, z0: 4, z1: 8 },
   spawnWeights: { far: 18, gap: 30, door: 20, prop: 17, ground: 15 },
+  triggers: [
+    { x0: -5, x1: 5, z0: -3.5, z1: 3, count: 3 },
+    { x0: -30, x1: 30, z0: 5.2, z1: 13.8, count: 4 },
+    { x0: -5, x1: 5, z0: 16, z1: 30, count: 5 },
+  ],
   walkable: [
     { x0: -5, x1: 5, z0: -3.5, z1: 30 },
     { x0: -30, x1: 30, z0: 5.2, z1: 13.8 },
@@ -362,6 +389,11 @@ const parkingLot: Scene = {
   far: { x0: -1.5, x1: 1.5, z0: 18, z1: 20 },
   groundSpawn: { x0: -1.8, x1: 1.8, z0: 4, z1: 8 },
   spawnWeights: { far: 18, gap: 15, door: 22, prop: 30, ground: 15 },
+  triggers: [
+    { x0: -13.5, x1: 13.5, z0: -4, z1: 3, count: 3 },
+    { x0: -13.5, x1: 13.5, z0: 6, z1: 12, count: 4 },
+    { x0: -13.5, x1: 13.5, z0: 14, z1: 21.5, count: 5 },
+  ],
   walkable: [{ x0: -13.5, x1: 13.5, z0: -4, z1: 21.5 }],
   exit: { x: 1, z: 20.8 },
 };
@@ -397,6 +429,11 @@ const arcadeGate: Scene = {
   far: { x0: -2, x1: 2, z0: 17, z1: 20 },
   groundSpawn: { x0: -3, x1: 3, z0: 4, z1: 7.5 },
   spawnWeights: { far: 25, gap: 20, door: 25, prop: 15, ground: 15 },
+  triggers: [
+    { x0: -11.5, x1: 11.5, z0: -4, z1: 3, count: 3 },
+    { x0: -11.5, x1: 11.5, z0: 5, z1: 9, count: 4 },
+    { x0: -11.5, x1: 11.5, z0: 9, z1: 40, count: 5 },
+  ],
   walkable: [
     { x0: -11.5, x1: 11.5, z0: -4, z1: 13.6 },
     { x0: -5, x1: 5, z0: 13.6, z1: 40 },
@@ -435,6 +472,11 @@ const busTerminal: Scene = {
   far: { x0: -3, x1: 3, z0: 17, z1: 20 },
   groundSpawn: { x0: -4, x1: 3, z0: 3.5, z1: 6 },
   spawnWeights: { far: 22, gap: 18, door: 20, prop: 22, ground: 18 },
+  triggers: [
+    { x0: -11.5, x1: 11.5, z0: -4, z1: 3, count: 3 },
+    { x0: -11.5, x1: 11.5, z0: 6, z1: 12, count: 4 },
+    { x0: -11.5, x1: 11.5, z0: 14, z1: 22, count: 5 },
+  ],
   walkable: [{ x0: -11.5, x1: 11.5, z0: -4, z1: 22 }],
   exit: { x: 0, z: 21 },
 };
@@ -475,6 +517,11 @@ const underBridge: Scene = {
   far: { x0: -1.5, x1: 1.5, z0: 17, z1: 20 },
   groundSpawn: { x0: -2, x1: 2, z0: 4, z1: 7 },
   spawnWeights: { far: 18, gap: 30, door: 12, prop: 25, ground: 15 },
+  triggers: [
+    { x0: -5, x1: 5, z0: -4, z1: 3, count: 3 },
+    { x0: -30, x1: 30, z0: 7, z1: 14, count: 4 },
+    { x0: -5, x1: 5, z0: 18, z1: 40, count: 5 },
+  ],
   walkable: [
     { x0: -5, x1: 5, z0: -4, z1: 40 },
     { x0: -30, x1: 30, z0: 8.3, z1: 13.7 },
@@ -509,6 +556,11 @@ const stationFront: Scene = {
   groundSpawn: { x0: -3, x1: 3, z0: 4, z1: 7 },
   spawnWeights: { far: 0, gap: 25, door: 40, prop: 15, ground: 20 },
   bossStart: { x: 0, z: 19, portal: 0 },
+  triggers: [
+    { x0: -14.5, x1: 14.5, z0: -4, z1: 3, count: 3 },
+    { x0: -14.5, x1: 14.5, z0: 5, z1: 10, count: 4 },
+    { x0: -14.5, x1: 14.5, z0: 10, z1: 17.5, count: 5 },
+  ],
   walkable: [{ x0: -14.5, x1: 14.5, z0: -4, z1: 17.5 }],
 };
 

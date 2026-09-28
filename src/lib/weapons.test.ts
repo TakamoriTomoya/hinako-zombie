@@ -18,6 +18,6 @@ describe("箱から出る武器", () => {
     const total = SPECIAL_WEAPONS.reduce((sum, id) => sum + PICKUP_WEIGHTS[id], 0);
     expect(pickSpecialWeapon(0)).toBe(SPECIAL_WEAPONS[0]);
     expect(pickSpecialWeapon(0.9999)).toBe(SPECIAL_WEAPONS[SPECIAL_WEAPONS.length - 1]);
-    expect(pickSpecialWeapon((PICKUP_WEIGHTS.mg + 1) / total)).toBe("rocket");
+    expect(pickSpecialWeapon((PICKUP_WEIGHTS.mg + 1) / total)).toBe(SPECIAL_WEAPONS[1]);
   });
 });

@@ -1,5 +1,5 @@
 // 画面の右下に見える、自分の手と武器を描く。
-// 後ろから見た武器が、ねらっている点の方へ少し向きを変える。撃つと跳ね上がり、リロード中や持ちかえ中は下に下げる。
+// 後ろから見た武器が、ねらっている点の方へ少し向きを変える。撃つと跳ね上がり、持ちかえ中は下に下げる。
 
 import type { View } from "./perspective";
 import type { WeaponId } from "./weapons";
@@ -9,12 +9,12 @@ export interface GunPose {
   aimX: number;
   aimY: number;
   recoil: number; // 0〜1。撃った直後が1
-  reload: number; // 0〜1。リロード(持ちかえ)の進み具合(0: していない)
+  dip: number; // 0〜1。持ちかえ中に、いったん下げて持ち上げる動きの進み具合(0: していない)
   flash: boolean; // 銃口の火
 }
 
 // 武器ごとの銃口の位置(銃の大きさを100とした座標)
-const MUZZLE_Y: Record<WeaponId, number> = { pistol: -92, mg: -130, rocket: -122, grenade: -70 };
+const MUZZLE_Y: Record<WeaponId, number> = { pistol: -92, mg: -130, shotgun: -140, sniper: -160, flame: -128, rocket: -122, grenade: -70 };
 
 interface GunGeometry {
   size: number;
@@ -32,8 +32,8 @@ function geometry(view: View, pose: GunPose): GunGeometry {
   const baseY = h + size * 0.08 + (pose.aimY - h * 0.45) * 0.06;
   // ねらう点の方へ傾ける(大きく傾けすぎない)
   const angle = Math.max(-0.5, Math.min(0.35, Math.atan2(pose.aimX - baseX, baseY - pose.aimY) * 0.6));
-  // リロード中は下へ沈めて傾ける
-  const r = pose.reload > 0 ? Math.sin(Math.min(1, pose.reload) * Math.PI) : 0;
+  // 持ちかえ中は下へ沈めて傾ける
+  const r = pose.dip > 0 ? Math.sin(Math.min(1, pose.dip) * Math.PI) : 0;
   return { size, baseX, baseY, angle: angle + r * 0.6 - pose.recoil * 0.12, dip: r * size * 0.45 + pose.recoil * size * 0.08 };
 }
 
@@ -55,10 +55,13 @@ export function drawGun(ctx: CanvasRenderingContext2D, view: View, pose: GunPose
   ctx.rotate(g.angle);
   ctx.scale(u, u);
   if (pose.weapon === "mg") drawMachineGun(ctx);
+  else if (pose.weapon === "shotgun") drawShotgun(ctx);
+  else if (pose.weapon === "sniper") drawSniper(ctx);
+  else if (pose.weapon === "flame") drawFlamethrower(ctx, pose.flash);
   else if (pose.weapon === "rocket") drawRocketLauncher(ctx);
   else if (pose.weapon === "grenade") drawGrenadeHand(ctx, pose.recoil);
   else drawPistol(ctx);
-  if (pose.flash && pose.weapon !== "grenade") drawMuzzleFlash(ctx, MUZZLE_Y[pose.weapon] - 6, pose.weapon === "rocket" ? 1.6 : pose.weapon === "mg" ? 1.2 : 1);
+  if (pose.flash && pose.weapon !== "grenade" && pose.weapon !== "flame") drawMuzzleFlash(ctx, MUZZLE_Y[pose.weapon] - 6, pose.weapon === "rocket" || pose.weapon === "shotgun" ? 1.6 : pose.weapon === "mg" ? 1.2 : 1);
   ctx.restore();
 }
 
@@ -148,6 +151,87 @@ function drawMachineGun(ctx: CanvasRenderingContext2D): void {
   ctx.fillRect(-4, -92, 8, 34);
   ctx.fillStyle = "#ffe066";
   ctx.fillRect(-1.2, -134, 2.4, 4);
+  drawGripHand(ctx);
+}
+
+// ショットガン: 太い銃身と、その下の木の握り(ポンプ)
+function drawShotgun(ctx: CanvasRenderingContext2D): void {
+  drawSleeve(ctx);
+  taper(ctx, 18, 12, -48, -100, metal(ctx, 18, "#1f2227", "#4d535e"));
+  taper(ctx, 12, 8, -98, -140, metal(ctx, 12, "#2a2d34", "#626a77"));
+  // 木のポンプ
+  const wood = ctx.createLinearGradient(-16, 0, 16, 0);
+  wood.addColorStop(0, "#5a3a1e");
+  wood.addColorStop(0.5, "#9a6a3a");
+  wood.addColorStop(1, "#4a2e16");
+  taper(ctx, 15, 12, -92, -118, wood);
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1.2;
+  for (let y = -96; y > -116; y -= 4) {
+    ctx.beginPath();
+    ctx.moveTo(-13, y);
+    ctx.lineTo(13, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#0b0c0e";
+  ctx.beginPath();
+  ctx.ellipse(0, -140, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffe066";
+  ctx.fillRect(-1.5, -144, 3, 4);
+  drawGripHand(ctx);
+}
+
+// スナイパー: 長い銃身と、上にのったスコープ
+function drawSniper(ctx: CanvasRenderingContext2D): void {
+  drawSleeve(ctx);
+  taper(ctx, 16, 11, -48, -92, metal(ctx, 16, "#2b3a2b", "#56705a"));
+  taper(ctx, 6, 4, -90, -160, metal(ctx, 6, "#1c1e22", "#4a4f58"));
+  ctx.fillStyle = "#0b0c0e";
+  ctx.beginPath();
+  ctx.ellipse(0, -160, 3, 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // スコープ
+  taper(ctx, 10, 8, -60, -102, metal(ctx, 10, "#111316", "#3d434c"));
+  ctx.fillStyle = "#0e2a3a";
+  ctx.beginPath();
+  ctx.ellipse(0, -60, 9, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(126,200,255,0.55)";
+  ctx.beginPath();
+  ctx.ellipse(-2, -61, 4, 2, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  drawGripHand(ctx);
+}
+
+// かえんほうしゃき: 太いノズルと、先で燃える小さな火。撃っている間は火が大きくなる
+function drawFlamethrower(ctx: CanvasRenderingContext2D, firing: boolean): void {
+  drawSleeve(ctx);
+  // 横の燃料タンク
+  ctx.fillStyle = "#b8321f";
+  ctx.beginPath();
+  ctx.ellipse(-30, -62, 11, 22, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(-33, -70, 3, 9, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  taper(ctx, 17, 11, -48, -100, metal(ctx, 17, "#2a2d34", "#5f6672"));
+  taper(ctx, 11, 13, -98, -128, metal(ctx, 13, "#3a3f47", "#8a919c"));
+  ctx.fillStyle = "#0b0c0e";
+  ctx.beginPath();
+  ctx.ellipse(0, -128, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // 先の火
+  const r = firing ? 10 : 5;
+  const g = ctx.createRadialGradient(0, -132, 0, 0, -132, r * 2);
+  g.addColorStop(0, "rgba(180,220,255,1)");
+  g.addColorStop(0.4, "rgba(255,170,60,0.9)");
+  g.addColorStop(1, "rgba(255,90,30,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, -132, r * 2, 0, Math.PI * 2);
+  ctx.fill();
   drawGripHand(ctx);
 }
 

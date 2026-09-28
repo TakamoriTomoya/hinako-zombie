@@ -2,7 +2,10 @@
 // Reactには依存しない。画面に出す数字(スコア・ライフ・弾数など)が変わった時だけ onState で知らせる。
 
 import {
+  ATTACK_GRACE_MS,
   ATTACK_WINDUP_MS,
+  GROUND_SPAWN_DIST,
+  SPAWN_MIN_DIST,
   ATTACK_Z,
   BITE_KNOCKBACK_M,
   BITE_REACH,
@@ -32,12 +35,9 @@ import {
   HIT_FLASH_MS,
   HIT_STAGGER_BACK_M,
   HIT_STAGGER_MS,
-  HORDE_MAX,
-  HORDE_MIN,
-  HORDE_STAGGER_MS,
+  TRIGGER_STAGGER_MS,
   HURT_FLASH_MS,
   LIFE_CLEAR_BONUS,
-  MAX_AMMO,
   MOVE_MS,
   MUZZLE_FLASH_MS,
   PLAYER_INVINCIBLE_MS,
@@ -50,10 +50,8 @@ import {
   PROJECTILE_RADIUS_M,
   PROJECTILE_SCORE,
   RECOIL_MS,
-  RELOAD_MS,
   RISE_MS,
   SHAKE_MS,
-  SHOT_COOLDOWN_MS,
   SPAWN_Z_MAX,
   STAGE_BANNER_MS,
   ARRIVE_BANNER_MS,
@@ -109,6 +107,7 @@ import {
   SWITCH_MS,
   WEAPON_ORDER,
   WEAPONS,
+  emptyWeaponAmmo,
   type SpecialWeaponId,
   type WeaponId,
 } from "./weapons";
@@ -129,8 +128,6 @@ export interface EngineState {
   phase: Phase;
   score: number;
   lives: number;
-  ammo: number; // ハンドガンの弾
-  reloading: boolean;
   weapon: WeaponId;
   weaponAmmo: Record<SpecialWeaponId, number>; // 拾った武器の残りの弾
   stage: number; // 1から
@@ -139,6 +136,8 @@ export interface EngineState {
   bossHp: BossHp | null;
   bossWarning: boolean;
   exitOpen: boolean; // 出口へ向かえる(次の場所へ進める)
+  paused: boolean; // 一時停止中
+  advanceHint: boolean; // ゾンビを倒しきったが、まだ先に出てくる地点がある(前に進もう)
   hintVisible: boolean;
   highScore: number;
   isNewRecord: boolean;
@@ -173,6 +172,7 @@ interface Zombie {
   ageMs: number;
   staggerMs: number;
   flashMs: number;
+  burnMs: number; // 焼かれている(赤くゆらめく)
   walkPhase: number;
   lastHitHead: boolean;
   stuckMs: number; // 建物につっかえて進めていない時間
@@ -255,6 +255,7 @@ interface Tracer {
   x1: number;
   y1: number;
   life: number;
+  width?: number; // スナイパーは太く明るい
 }
 
 interface AABB {
@@ -280,6 +281,7 @@ interface DrawItem {
   ignore?: Occluder; // この建物の中にいても隠れない(ドアから出てくる途中)
   draw: () => void;
   hit?: (px: number, py: number) => Target | null;
+  zombie?: boolean; // ゾンビ(スナイパーの弾がつらぬける)
 }
 
 interface Target {
@@ -298,7 +300,6 @@ const HOLD_TO_FIRE_MS = 150; // マシンガンは、動かさずにこれだけ
 const MAX_DPR = 1.5;
 const MAX_RENDER_PIXELS = 1_600_000;
 const PICKUP_WALK_RADIUS = 0.9; // 箱にこれだけ近づくと拾える
-const SPAWN_MIN_DIST = 4; // プレイヤーのすぐそばには出てこない
 
 // 歩いて(走って)いる時は、体を左右にゆらして上下にはずませる
 function isMoving(z: Zombie): boolean {
@@ -337,9 +338,8 @@ export class ZombieEngine {
   private areaIndex = 0; // ステージの中の何か所目の場所か
   private stagePhase: StagePhase = "banner";
   private stageMs = 0;
-  private spawnMs = 0;
   private minionMs = 0;
-  private hordeMs = 0;
+  private firedTriggers = new Set<number>(); // もう通った(ゾンビが出てきた)地点の番号
   private banner: StageBannerText | null = null;
   private hintMs = 0;
   private endMs = 0; // ゲームオーバーから結果画面に進むまで
@@ -361,8 +361,6 @@ export class ZombieEngine {
 
   private score = 0;
   private lives = PLAYER_START_LIVES;
-  private ammo = MAX_AMMO;
-  private reloadMs = 0;
   private cooldownMs = 0;
   private recoilMs = 0;
   private flashMs = 0;
@@ -381,14 +379,14 @@ export class ZombieEngine {
   private mouseAim = false;
 
   private weapon: WeaponId = "pistol";
-  private weaponAmmo: Record<SpecialWeaponId, number> = { mg: 0, rocket: 0, grenade: 0 };
+  private weaponAmmo: Record<SpecialWeaponId, number> = emptyWeaponAmmo();
   private switchMs = 0;
   private firePointerId: number | null = null;
   private pickupMs = 0;
   private pickupHintShown = false;
 
   private zombies: Zombie[] = [];
-  private pendingSpawns: { delayMs: number; kind: ZombieKind; entry: EntryKind; portal?: Portal }[] = [];
+  private pendingSpawns: { delayMs: number; kind: ZombieKind }[] = [];
   private pickups: Pickup[] = [];
   private rockets: Rocket[] = [];
   private grenades: Grenade[] = [];
@@ -400,6 +398,7 @@ export class ZombieEngine {
   private drawOrder: DrawItem[] = []; // 最後に描いた順番(撃った時の当たり判定に使う)
 
   private lastSent = "";
+  private paused = false;
 
   private readonly onState: (state: EngineState) => void;
   private readonly sound: SoundManager;
@@ -426,6 +425,7 @@ export class ZombieEngine {
     window.addEventListener("blur", this.onBlur);
     window.addEventListener("pointerup", this.onPointerUp);
     window.addEventListener("pointercancel", this.onPointerUp);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
     this.resize();
     this.aimX = this.view.w / 2;
     this.aimY = this.view.h * 0.4;
@@ -448,22 +448,27 @@ export class ZombieEngine {
     window.removeEventListener("blur", this.onBlur);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointercancel", this.onPointerUp);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
   }
+
+  // ほかのアプリやタブに切りかえたら、自動で一時停止する(戻ってきた時にいきなりかじられないように)
+  private onVisibilityChange = (): void => {
+    if (document.visibilityState === "hidden") this.setPaused(true);
+  };
 
   // ---- 外から呼ぶ操作 ----
 
   startGame(options: StartOptions = {}): void {
+    this.setPaused(false);
     this.phase = "playing";
     this.score = 0;
     this.lives = PLAYER_START_LIVES;
-    this.ammo = MAX_AMMO;
-    this.reloadMs = 0;
     this.invincibleMs = 0;
     this.hurtMs = 0;
     this.isNewRecord = false;
     this.endMs = 0;
     this.weapon = "pistol";
-    this.weaponAmmo = { mg: 0, rocket: 0, grenade: 0 };
+    this.weaponAmmo = emptyWeaponAmmo();
     this.switchMs = 0;
     this.firePointerId = null;
     this.pickupHintShown = false;
@@ -472,6 +477,7 @@ export class ZombieEngine {
   }
 
   goHome(): void {
+    this.setPaused(false);
     this.phase = "home";
     this.stageIndex = 0;
     this.areaIndex = 0;
@@ -480,26 +486,33 @@ export class ZombieEngine {
     this.sound.playBgm("map");
   }
 
+  // 一時停止する/やめる。遊んでいる時だけ止められる
+  setPaused(paused: boolean): void {
+    const next = paused && this.phase === "playing";
+    if (next === this.paused) return;
+    this.paused = next;
+    // 押しっぱなしだった指やキーは離したことにする
+    this.touches.clear();
+    this.keys.clear();
+    this.firePointerId = null;
+    this.moveInput = { x: 0, y: 0 };
+    this.yawVel = 0;
+    this.sound.setPaused(next);
+  }
+
   // 画面のスティック。x: 右が+、y: 前が+(どちらも -1〜1)
   setMoveInput(x: number, y: number): void {
+    if (this.paused) return;
     this.moveInput = { x, y };
   }
 
   selectWeapon(id: WeaponId): void {
-    if (this.phase !== "playing" || id === this.weapon) return;
+    if (this.phase !== "playing" || this.paused || id === this.weapon) return;
     if (id !== "pistol" && this.weaponAmmo[id] <= 0) return;
     this.weapon = id;
     this.switchMs = SWITCH_MS;
-    this.reloadMs = 0;
     this.firePointerId = null;
     this.sound.playSfx("switch");
-    if (id === "pistol" && this.ammo === 0) this.reload();
-  }
-
-  reload(): void {
-    if (this.phase !== "playing" || this.weapon !== "pistol" || this.reloadMs > 0 || this.ammo === MAX_AMMO) return;
-    this.reloadMs = RELOAD_MS;
-    this.sound.playSfx("reload");
   }
 
   // ---- ステージの流れ ----
@@ -520,7 +533,6 @@ export class ZombieEngine {
     this.stageIndex = index;
     this.areaIndex = atBoss ? STAGE_SCENES[index].length - 1 : 0;
     this.loadArea();
-    this.hordeMs = this.stage.hordeMs;
     const readySprites = this.readySprites();
     this.bossSprite = readySprites.length ? readySprites[Math.floor(Math.random() * readySprites.length)] : null;
     if (atBoss) {
@@ -564,7 +576,7 @@ export class ZombieEngine {
     this.grenades = [];
     this.explosions = [];
     this.pickupMs = ROAD_PICKUP_INTERVAL_MS / 2;
-    this.spawnMs = 1200;
+    this.firedTriggers = new Set();
     this.minionMs = 0;
   }
 
@@ -585,21 +597,18 @@ export class ZombieEngine {
         }
         break;
       case "wave": {
-        const waveMs = stage.areaWaveMs[this.areaIndex];
         if (this.banner && this.stageMs >= ARRIVE_BANNER_MS) this.banner = null;
-        this.spawnMs -= dt;
-        const progress = Math.min(1, this.stageMs / waveMs);
-        if (this.spawnMs <= 0) {
-          this.spawnGroup(stage, stage.maxAlive);
-          this.spawnMs = stage.spawnStartMs + (stage.spawnEndMs - stage.spawnStartMs) * progress;
-        }
-        this.hordeMs -= dt;
-        if (this.hordeMs <= 0) {
-          this.hordeMs = stage.hordeMs;
-          this.startHorde();
-        }
-        if (this.stageMs >= waveMs) {
-          this.pendingSpawns = [];
+        // 地点に入ったら、その地点のゾンビが出てくる(1回だけ)
+        this.scene.triggers.forEach((t, i) => {
+          if (this.firedTriggers.has(i) || !inRegion(this.px, this.pz, t)) return;
+          this.firedTriggers.add(i);
+          for (let k = 0; k < t.count + stage.extraPerTrigger; k++) {
+            this.pendingSpawns.push({ delayMs: 300 + k * TRIGGER_STAGGER_MS, kind: this.pickKind(stage) });
+          }
+          this.sound.playSfx("groan");
+        });
+        // 全部の地点を通り、出てきたゾンビを倒しきったら先へ進める
+        if (this.firedTriggers.size === this.scene.triggers.length && this.pendingSpawns.length === 0 && this.aliveMinions() === 0) {
           this.banner = null;
           if (this.isLastArea) {
             this.setStagePhase("warning");
@@ -816,7 +825,7 @@ export class ZombieEngine {
   private groundSpawnPoint(): { x: number; z: number } | null {
     for (let i = 0; i < 10; i++) {
       const a = this.yaw + (Math.random() - 0.5) * Math.PI * 1.1;
-      const d = 4.5 + Math.random() * 4;
+      const d = GROUND_SPAWN_DIST[0] + Math.random() * (GROUND_SPAWN_DIST[1] - GROUND_SPAWN_DIST[0]);
       const x = this.px + Math.sin(a) * d;
       const z = this.pz + Math.cos(a) * d;
       if (this.walkableAt(x, z) && !this.blockedAt(x, z, 0.6)) return { x, z };
@@ -893,24 +902,30 @@ export class ZombieEngine {
     zombie.state = p.kind === "door" ? "emerge" : "enter";
   }
 
-  // 群れ: 同じすき間(なければ遠く)から、何体かが少しずつ間をあけて出てくる
-  private startHorde(): void {
-    const stage = this.stage;
-    const gaps = this.portalsFor("gap");
-    const portal = gaps.length && (Math.random() < 0.75 || !this.scene.far) ? gaps[Math.floor(Math.random() * gaps.length)] : undefined;
-    if (!portal && !this.scene.far) return;
-    const count = HORDE_MIN + Math.floor(Math.random() * (HORDE_MAX - HORDE_MIN + 1));
-    for (let i = 0; i < count; i++) {
-      this.pendingSpawns.push({ delayMs: i * HORDE_STAGGER_MS, kind: this.pickKind(stage), entry: portal ? "gap" : "far", portal });
-    }
-    this.sound.playSfx("groan");
-  }
-
+  // 順番がきたゾンビを出す。出てこられる場所がなければ、ほかの出方でためし、それでもだめなら少し待ってまたためす
   private updatePendingSpawns(dt: number): void {
     for (const p of this.pendingSpawns) p.delayMs -= dt;
     const ready = this.pendingSpawns.filter((p) => p.delayMs <= 0);
     this.pendingSpawns = this.pendingSpawns.filter((p) => p.delayMs > 0);
-    for (const p of ready) this.spawnZombie(p.kind, p.entry, p.portal);
+    for (const p of ready) {
+      let ok = false;
+      for (let tries = 0; tries < 4 && !ok; tries++) ok = this.spawnZombie(p.kind, this.pickEntry());
+      if (!ok) this.pendingSpawns.push({ ...p, delayMs: 400 });
+    }
+  }
+
+  // まだ通っていない地点のうち、いちばん先に通るはずのもの(ゾンビがいない時に、進む方向を知らせる)
+  private nextTrigger(): { x: number; z: number } | null {
+    const i = this.scene.triggers.findIndex((_, k) => !this.firedTriggers.has(k));
+    if (i < 0) return null;
+    const t = this.scene.triggers[i];
+    // 範囲の中で、プレイヤーにいちばん近い所
+    return { x: Math.max(t.x0, Math.min(t.x1, this.px)), z: Math.max(t.z0, Math.min(t.z1, this.pz)) };
+  }
+
+  // まだ地点が残っていて、今はゾンビがいない(前に進むとまた出てくる)
+  private shouldAdvance(): boolean {
+    return this.phase === "playing" && this.stagePhase === "wave" && !this.banner && this.firedTriggers.size < this.scene.triggers.length && this.pendingSpawns.length === 0 && this.aliveMinions() === 0;
   }
 
   private makeZombie(sprite: Sprite, kind: Zombie["kind"], heightM: number, x: number, z: number, hp: number, speed: number, state: ZombieState): Zombie {
@@ -932,6 +947,7 @@ export class ZombieEngine {
       ageMs: 0,
       staggerMs: 0,
       flashMs: 0,
+      burnMs: 0,
       walkPhase: Math.random() * Math.PI * 2,
       lastHitHead: false,
       stuckMs: 0,
@@ -971,9 +987,12 @@ export class ZombieEngine {
   private frame = (now: number): void => {
     const dt = Math.min(50, now - this.lastTime);
     this.lastTime = now;
-    this.time += dt;
     this.resize();
-    this.update(dt);
+    // 一時停止中は時間を進めず、止まった景色をそのまま描く
+    if (!this.paused) {
+      this.time += dt;
+      this.update(dt);
+    }
     this.render();
     this.sendState();
     this.raf = requestAnimationFrame(this.frame);
@@ -988,13 +1007,6 @@ export class ZombieEngine {
     this.shakeMs = Math.max(0, this.shakeMs - dt);
     this.aimVisibleMs = Math.max(0, this.aimVisibleMs - dt);
     this.switchMs = Math.max(0, this.switchMs - dt);
-    if (this.reloadMs > 0) {
-      this.reloadMs -= dt;
-      if (this.reloadMs <= 0) {
-        this.reloadMs = 0;
-        this.ammo = MAX_AMMO;
-      }
-    }
 
     if (this.phase === "playing") this.updatePlayer(dt);
     this.view = makeView(this.view.w, this.view.h, this.px, this.pz, this.yaw, this.pitch);
@@ -1050,6 +1062,7 @@ export class ZombieEngine {
     z.stateMs += dt;
     z.ageMs += dt;
     z.flashMs = Math.max(0, z.flashMs - dt);
+    z.burnMs = Math.max(0, z.burnMs - dt);
     const sec = dt / 1000;
     if (z.state === "dying") return;
     if (z.state === "wander") {
@@ -1074,15 +1087,19 @@ export class ZombieEngine {
         if (z.stateMs >= RISE_MS) this.setZombieState(z, z.entryX !== null ? "enter" : "walk");
         break;
       case "enter":
-        if (this.stepToEntry(z, Math.max(ENTER_SPEED, z.speed) * sec)) this.startWalking(z);
+        // すき間やドアから、ゆっくり出てくる
+        if (this.stepToEntry(z, ENTER_SPEED * sec)) this.startWalking(z);
         break;
       case "walk": {
         const d = this.distToPlayer(z.x, z.z);
         if (d <= ATTACK_Z) {
-          this.setZombieState(z, "windup");
+          // 出てきたばかりのゾンビは、目の前まで来てもすぐにはかみつかない(その場でゆらゆらしている)
+          if (z.ageMs >= ATTACK_GRACE_MS) this.setZombieState(z, "windup");
           break;
         }
-        this.chase(z, z.speed * sec, dt);
+        // ずりずりと一歩ずつ進む: 足を出す時だけ速く、あとはほとんど止まる
+        const cycle = Math.max(0, Math.sin(this.time * (z.kind === "runner" ? 0.012 : 0.006) + z.walkPhase));
+        this.chase(z, z.speed * (0.35 + 0.65 * cycle) * sec, dt);
         break;
       }
       case "windup":
@@ -1304,25 +1321,40 @@ export class ZombieEngine {
     if (this.cooldownMs > 0 || this.switchMs > 0 || this.stagePhase === "move") return;
     const weapon = this.weapon;
     const def = WEAPONS[weapon];
-    if (weapon === "pistol") {
-      if (this.reloadMs > 0 || this.ammo <= 0) {
-        this.sound.playSfx("empty");
-        this.cooldownMs = SHOT_COOLDOWN_MS * 2;
-        return;
-      }
-      this.ammo -= 1;
-    } else {
-      this.weaponAmmo[weapon] -= 1;
-    }
+    // ハンドガンは弾切れなしで、ずっと撃てる
+    if (weapon !== "pistol") this.weaponAmmo[weapon] -= 1;
     this.cooldownMs = def.cooldownMs;
-    this.recoilMs = RECOIL_MS;
-    this.flashMs = weapon === "grenade" ? 0 : MUZZLE_FLASH_MS;
+    this.recoilMs = weapon === "flame" ? RECOIL_MS * 0.3 : RECOIL_MS;
+    this.flashMs = weapon === "grenade" || weapon === "flame" ? 0 : MUZZLE_FLASH_MS;
     const muzzle = muzzlePoint(this.view, this.gunPose());
 
     if (weapon === "rocket") {
       this.launchRocket(px, py, muzzle);
     } else if (weapon === "grenade") {
       this.throwGrenade(px, py);
+    } else if (def.flame) {
+      this.flameTick(px, py, muzzle, def.flame);
+    } else if (def.pellets) {
+      // ショットガン: たくさんの弾が広がって飛ぶ
+      this.sound.playSfx("shotgun");
+      this.shakeMs = SHAKE_MS * 0.4;
+      for (let i = 0; i < def.pellets.count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * def.pellets.spreadPx;
+        const x = px + Math.cos(a) * r;
+        const y = py + Math.sin(a) * r;
+        this.tracers.push({ x0: muzzle.x, y0: muzzle.y, x1: x, y1: y, life: TRACER_MS });
+        const target = this.findTarget(x, y);
+        if (target) target.hit(def.bodyDamage, def.headDamage);
+        else this.spawnDust(x, y);
+      }
+    } else if (def.pierce) {
+      // スナイパー: とても強く、ならんだゾンビをつらぬく(建物などに当たるとそこで止まる)
+      this.sound.playSfx("sniper");
+      this.tracers.push({ x0: muzzle.x, y0: muzzle.y, x1: px, y1: py, life: TRACER_MS * 3, width: 4 });
+      const targets = this.findTargets(px, py, def.pierce);
+      if (targets.length) targets.forEach((t) => t.hit(def.bodyDamage, def.headDamage));
+      else this.spawnDust(px, py);
     } else {
       if (weapon === "mg") {
         px += (Math.random() - 0.5) * 2 * MG_SPREAD_PX;
@@ -1335,11 +1367,66 @@ export class ZombieEngine {
       else this.spawnDust(px, py);
     }
 
-    if (weapon === "pistol") {
-      if (this.ammo === 0) this.reload();
-    } else if (this.weaponAmmo[weapon] <= 0) {
+    if (weapon !== "pistol" && this.weaponAmmo[weapon] <= 0) {
       this.firePointerId = null;
       this.selectWeapon("pistol");
+    }
+  }
+
+  // つらぬく弾: 手前から順に、ゾンビなら当ててさらに奥へ。ゾンビ以外(建物など)に当たったらそこで止まる
+  private findTargets(px: number, py: number, max: number): Target[] {
+    const list: Target[] = [];
+    for (let i = this.drawOrder.length - 1; i >= 0 && list.length < max; i--) {
+      const item = this.drawOrder[i];
+      const t = item.hit?.(px, py);
+      if (!t) continue;
+      list.push(t);
+      if (!item.zombie) break;
+    }
+    return list;
+  }
+
+  // かえんほうしゃき: ねらった方向の前方を焼く。炎のつぶを飛ばし、範囲のゾンビに少しずつダメージ
+  private flameTick(px: number, py: number, muzzle: { x: number; y: number }, flame: { rangeM: number; coneRad: number; damagePerShot: number }): void {
+    const view = this.view;
+    this.sound.playSfx("flame");
+    for (let i = 0; i < 5; i++) {
+      const life = 260 + Math.random() * 160;
+      const spread = (Math.random() - 0.5) * 60;
+      const k = 1000 / life;
+      this.particles.push({
+        x: muzzle.x,
+        y: muzzle.y,
+        vx: (px - muzzle.x + spread) * k * 0.9,
+        vy: (py - muzzle.y + spread) * k * 0.9,
+        life,
+        maxLife: life,
+        size: 8 + Math.random() * 14,
+        color: ["#fff3b0", "#ffc93c", "#ff8a3c", "#ff5a3c"][Math.floor(Math.random() * 4)],
+        gravity: -300,
+      });
+    }
+    const aimAngle = Math.atan((px - view.w / 2) / view.focal);
+    for (const z of this.zombies) {
+      if (z.state === "dying" || z.state === "wander") continue;
+      const c = toCamera(view, z.x, z.z);
+      if (c.z <= 0.3 || c.z > flame.rangeM + (z.kind === "boss" ? 1 : 0)) continue;
+      if (Math.abs(Math.atan2(c.x, c.z) - aimAngle) > flame.coneRad) continue;
+      // 建物ごしには焼けない
+      if (this.occluders.some((o) => o.blocks && !inAABB(z.x, z.z, o.aabb) && segmentHitsBox(this.px, this.pz, z.x, z.z, o.aabb))) continue;
+      const rect = this.zombieRect(z);
+      const sx = rect.left + rect.w / 2;
+      const sy = rect.top + rect.h * 0.5;
+      if (z.kind === "boss") {
+        this.applyDamage(z, flame.damagePerShot, false, sx, sy);
+        continue;
+      }
+      // 焼かれている間は足が止まる(よろけて下がりはしない)
+      z.hp -= flame.damagePerShot;
+      z.burnMs = 200;
+      z.lastHitHead = false;
+      z.staggerMs = Math.max(z.staggerMs, 120);
+      if (z.hp <= 0) this.killZombie(z, true);
     }
   }
 
@@ -1648,15 +1735,15 @@ export class ZombieEngine {
   }
 
   private gunPose(): GunPose {
-    // 持ちかえ中はリロードと同じように、いったん下げて持ち上げる。歩いている時は小さくゆらす
+    // 持ちかえ中は、いったん下げて持ち上げる。歩いている時は小さくゆらす
     const moving = this.phase === "playing" && (this.stagePhase === "move" || this.walking);
-    const reload = this.reloadMs > 0 ? 1 - this.reloadMs / RELOAD_MS : this.switchMs > 0 ? 1 - this.switchMs / SWITCH_MS : moving ? 0.08 + Math.abs(Math.sin(this.time * 0.009)) * 0.06 : 0;
+    const dip = this.switchMs > 0 ? 1 - this.switchMs / SWITCH_MS : moving ? 0.08 + Math.abs(Math.sin(this.time * 0.009)) * 0.06 : 0;
     return {
       weapon: this.weapon,
       aimX: this.aimX,
       aimY: this.aimY,
-      recoil: Math.min(1, (this.recoilMs / RECOIL_MS) * (this.weapon === "rocket" ? 1.6 : 1)),
-      reload,
+      recoil: Math.min(1, (this.recoilMs / RECOIL_MS) * (this.weapon === "rocket" || this.weapon === "shotgun" || this.weapon === "sniper" ? 1.6 : 1)),
+      dip,
       flash: this.flashMs > 0,
     };
   }
@@ -1774,6 +1861,7 @@ export class ZombieEngine {
         ignore: z.portal ? this.containingOccluder(z.x, z.z) : undefined,
         draw: () => this.drawZombie(ctx, z, depth),
         hit: (px, py) => this.hitZombie(z, px, py),
+        zombie: true,
       });
     }
     for (const p of this.pickups) {
@@ -1943,7 +2031,11 @@ export class ZombieEngine {
       ctx.drawImage(sprite.outline, left - pad, top - pad, rect.w + pad * 2, rect.h + pad * 2);
     }
     ctx.drawImage(sprite.zombie, left, top, rect.w, rect.h);
-    if (z.flashMs > 0 && sprite.silhouette) {
+    if (z.burnMs > 0 && sprite.danger) {
+      // 焼かれている間は赤くゆらめく
+      ctx.globalAlpha *= 0.3 + 0.25 * (Math.sin(this.time * 0.04) * 0.5 + 0.5);
+      ctx.drawImage(sprite.danger, left, top, rect.w, rect.h);
+    } else if (z.flashMs > 0 && sprite.silhouette) {
       ctx.globalAlpha *= 0.8;
       ctx.drawImage(sprite.silhouette, left, top, rect.w, rect.h);
     } else if (z.state === "windup" && sprite.danger) {
@@ -2188,9 +2280,9 @@ export class ZombieEngine {
 
   private drawEffects(ctx: CanvasRenderingContext2D): void {
     for (const t of this.tracers) {
-      const a = t.life / TRACER_MS;
-      ctx.strokeStyle = `rgba(255,235,160,${0.8 * a})`;
-      ctx.lineWidth = 2;
+      const a = Math.min(1, t.life / TRACER_MS);
+      ctx.strokeStyle = t.width ? `rgba(190,235,255,${0.9 * a})` : `rgba(255,235,160,${0.8 * a})`;
+      ctx.lineWidth = t.width ?? 2;
       ctx.beginPath();
       ctx.moveTo(t.x0, t.y0);
       ctx.lineTo(t.x0 + (t.x1 - t.x0) * 0.85, t.y0 + (t.y1 - t.y0) * 0.85);
@@ -2248,6 +2340,12 @@ export class ZombieEngine {
       const m = place(exit.x, exit.z, 1);
       if (m) markers.push({ ...m, danger: 0.5, color: "rgba(120,255,160,0.95)" });
     }
+    // 次にゾンビが出てくる地点(進む方向)は黄色
+    const next = this.shouldAdvance() ? this.nextTrigger() : null;
+    if (next) {
+      const m = place(next.x, next.z, 1);
+      if (m) markers.push({ ...m, danger: 0.5, color: "rgba(255,224,102,0.95)" });
+    }
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 0.02);
     for (const m of markers) {
       const size = 12 + m.danger * 10 + (m.danger >= 1 ? pulse * 4 : 0);
@@ -2299,13 +2397,10 @@ export class ZombieEngine {
   // 撃つのは、動かさずに離した時(タップ・クリック)。動かしたらドラッグで向きを変える
   private onPointerDown = (e: PointerEvent): void => {
     e.preventDefault();
+    if (this.paused) return;
     const { x, y } = this.toLocal(e);
     this.mouseAim = e.pointerType === "mouse";
-    if (this.phase !== "playing") return;
-    if (e.button === 2) {
-      this.reload();
-      return;
-    }
+    if (this.phase !== "playing" || e.button === 2) return;
     this.touches.set(e.pointerId, { startX: x, startY: y, lastX: x, lastY: y, downAt: this.time, mode: "pending", lastMoveAt: performance.now(), turnVel: 0 });
     // さわったら、回っている勢いは止める
     this.yawVel = 0;
@@ -2377,7 +2472,12 @@ export class ZombieEngine {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    if (key === "r") this.reload();
+    // Esc か P で一時停止する/やめる
+    if (key === "Escape" || key === "p") {
+      this.setPaused(!this.paused);
+      return;
+    }
+    if (this.paused) return;
     const index = Number(key) - 1;
     if (index >= 0 && index < WEAPON_ORDER.length) this.selectWeapon(WEAPON_ORDER[index]);
     this.keys.add(key);
@@ -2404,8 +2504,6 @@ export class ZombieEngine {
       phase: this.phase === "gameover" && this.endMs > 0 ? "playing" : this.phase,
       score: this.score,
       lives: this.lives,
-      ammo: this.ammo,
-      reloading: this.reloadMs > 0,
       weapon: this.weapon,
       weaponAmmo: { ...this.weaponAmmo },
       stage: this.stageIndex + 1,
@@ -2414,6 +2512,8 @@ export class ZombieEngine {
       bossHp: this.phase === "playing" && boss && this.stagePhase === "boss" ? { name: `でかゾンビ${boss.sprite.name}`, percent: Math.max(0, (boss.hp / boss.maxHp) * 100) } : null,
       bossWarning: this.phase === "playing" && this.stagePhase === "warning",
       exitOpen: this.phase === "playing" && this.stagePhase === "exit",
+      paused: this.paused,
+      advanceHint: this.shouldAdvance(),
       hintVisible: this.phase === "playing" && this.stageIndex === 0 && this.areaIndex === 0 && this.stagePhase === "wave" && this.hintMs > 0,
       highScore: this.highScore,
       isNewRecord: this.isNewRecord,

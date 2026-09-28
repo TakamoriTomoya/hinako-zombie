@@ -1,14 +1,13 @@
-import { AmmoLabel } from "../components/AmmoLabel";
 import { LivesLabel } from "../components/LivesLabel";
 import { BossHpBar } from "../components/BossHpBar";
 import { BossWarning } from "../components/BossWarning";
 import { Joystick } from "../components/Joystick";
-import { ReloadButton } from "../components/ReloadButton";
+import { PauseButton } from "../components/PauseButton";
 import { StageBanner } from "../components/StageBanner";
 import { WeaponBar } from "../components/WeaponBar";
 import type { PageSlots } from "../components/BasePage";
 import type { BossHp, StageBannerText } from "../lib/engine";
-import { WEAPONS, type SpecialWeaponId, type WeaponId } from "../lib/weapons";
+import type { SpecialWeaponId, WeaponId } from "../lib/weapons";
 
 interface Props {
   stage: number;
@@ -16,52 +15,33 @@ interface Props {
   stageBanner: StageBannerText | null;
   score: number;
   lives: number;
-  ammo: number;
-  reloading: boolean;
   weapon: WeaponId;
   weaponAmmo: Record<SpecialWeaponId, number>;
   onSelectWeapon: (id: WeaponId) => void;
   bossHp: BossHp | null;
   bossWarning: boolean;
   exitOpen: boolean;
+  advanceHint: boolean;
   hintVisible: boolean;
-  onReload: () => void;
   onMove: (x: number, y: number) => void;
+  onPause: () => void;
 }
 
-export function BattlePage({ stage, areaName, stageBanner, score, lives, ammo, reloading, weapon, weaponAmmo, onSelectWeapon, bossHp, bossWarning, exitOpen, hintVisible, onReload, onMove }: Props): PageSlots {
+export function BattlePage({ stage, areaName, stageBanner, score, lives, weapon, weaponAmmo, onSelectWeapon, bossHp, bossWarning, exitOpen, advanceHint, hintVisible, onMove, onPause }: Props): PageSlots {
   return {
-    // 上: スコア・ライフ・場所の名前(ボス戦ではボスのHP)と、武器・弾(右)
+    // 上: 左に一時停止、右にスコアとステージ(場所の名前)。ボス戦ではその下にボスのHP
     header: (
-      <div className="flex w-full max-w-[560px] flex-col gap-1.5 px-4">
-        <div className="flex items-center justify-between">
-          <div className="font-heading text-2xl font-bold text-white text-outline">{score.toLocaleString()}</div>
-          <LivesLabel lives={lives} />
-        </div>
+      <div className="flex w-full flex-col gap-1.5 px-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            {bossHp !== null ? (
-              <BossHpBar name={bossHp.name} percent={bossHp.percent} />
-            ) : (
-              <div className="truncate font-heading text-sm font-bold text-white text-outline">
-                STAGE {stage}・{areaName}
-              </div>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-1.5">
-            <WeaponBar weapon={weapon} weaponAmmo={weaponAmmo} onSelect={onSelectWeapon} />
-            {weapon === "pistol" ? (
-              <div className="flex items-center gap-2">
-                <AmmoLabel ammo={ammo} reloading={reloading} />
-                <ReloadButton ammo={ammo} reloading={reloading} onReload={onReload} />
-              </div>
-            ) : (
-              <div className="font-heading text-lg leading-8 font-extrabold text-outline" style={{ color: WEAPONS[weapon].color }}>
-                {WEAPONS[weapon].name} ×{weaponAmmo[weapon]}
-              </div>
-            )}
+          <PauseButton onPause={onPause} />
+          <div className="flex min-w-0 flex-col items-end">
+            <div className="font-heading text-2xl leading-tight font-bold text-white text-outline">{score.toLocaleString()}</div>
+            <div className="max-w-full truncate font-heading text-sm font-bold text-white text-outline">
+              STAGE {stage}・{areaName}
+            </div>
           </div>
         </div>
+        {bossHp !== null && <BossHpBar name={bossHp.name} percent={bossHp.percent} />}
       </div>
     ),
     center: (
@@ -70,6 +50,11 @@ export function BattlePage({ stage, areaName, stageBanner, score, lives, ammo, r
         {exitOpen && !stageBanner && (
           <div className="pointer-events-none absolute inset-x-0 top-[24%] flex justify-center">
             <div className="animate-pulse text-center font-heading text-lg font-bold text-[#8dffb0] text-outline">でぐち(つぎへ)に むかおう!</div>
+          </div>
+        )}
+        {advanceHint && !stageBanner && (
+          <div className="pointer-events-none absolute inset-x-0 top-[24%] flex justify-center">
+            <div className="animate-pulse text-center font-heading text-lg font-bold text-[#ffe066] text-outline">まえに すすもう!</div>
           </div>
         )}
         {hintVisible && (
@@ -83,10 +68,14 @@ export function BattlePage({ stage, areaName, stageBanner, score, lives, ammo, r
         )}
       </>
     ),
-    // 左下: 歩くスティック(音のボタンの上)。右下は武器があるので空ける
+    // 左下: 歩くスティック。右下: ライフと、武器の持ちかえ
     bottom: (
-      <div className="flex w-full -translate-y-10 pl-4">
+      <div className="flex w-full -translate-y-2 items-end justify-between px-4">
         <Joystick onMove={onMove} />
+        <div className="flex flex-col items-end gap-1.5">
+          <LivesLabel lives={lives} />
+          <WeaponBar weapon={weapon} weaponAmmo={weaponAmmo} onSelect={onSelectWeapon} />
+        </div>
       </div>
     ),
   };

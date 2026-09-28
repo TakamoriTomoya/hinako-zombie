@@ -1,6 +1,7 @@
 import { CenterSlot } from "../components/CenterSlot";
 import { VersionLabel } from "../components/VersionLabel";
 import { DevStartPanel } from "../components/DevStartPanel";
+import { SoundToggle } from "../components/SoundToggle";
 import type { PageSlots } from "../components/BasePage";
 import { DEV_TOOLS } from "../lib/constants";
 import type { StartOptions } from "../lib/engine";
@@ -10,15 +11,19 @@ interface Props {
   onStart: () => void;
   devStart: Required<StartOptions>;
   onDevStartChange: (value: Required<StartOptions>) => void;
+  muted: boolean;
+  onToggleMuted: () => void;
 }
 
 // pages/ はマウント/アンマウントされる画面コンポーネントではなく、
 // 「このフェーズならBasePageの3スロットに何を入れるか」を決める関数。
 // canvasはBasePage側に1つだけ存在し続けるので、画面切り替えで再生成されない。
-export function HomePage({ highScore, onStart, devStart, onDevStartChange }: Props): PageSlots {
+export function HomePage({ highScore, onStart, devStart, onDevStartChange, muted, onToggleMuted }: Props): PageSlots {
   return {
     header: (
-      <div className="flex w-full justify-end px-6">
+      // 左に音のオン/オフ、右にバージョン。画面のはしから同じだけあけて、左右対称に置く
+      <div className="flex w-full items-center justify-between px-6">
+        <SoundToggle muted={muted} onToggle={onToggleMuted} placement="inline" />
         <VersionLabel />
       </div>
     ),

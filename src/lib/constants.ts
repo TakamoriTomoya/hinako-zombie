@@ -37,8 +37,6 @@ export const HURT_FLASH_MS = 600; // かじられた時に画面が赤くなる�
 export const SHAKE_MS = 350;
 
 // ---- 銃 ----
-export const MAX_AMMO = 8;
-export const RELOAD_MS = 1000;
 export const SHOT_COOLDOWN_MS = 110; // 連打しすぎないよう、次の弾を撃てるまでの最短間隔
 export const RECOIL_MS = 130; // 撃った時に銃が跳ね上がって戻るまで
 export const MUZZLE_FLASH_MS = 60;
@@ -51,7 +49,10 @@ export const SPAWN_Z_MAX = 20; // これより遠くには出てこない(遠く
 export const ATTACK_Z = 2.2; // ここまで近づくと、かみつこうとする(プレイヤーからの距離)
 export const BITE_REACH = 3; // かみつく瞬間に、プレイヤーがこれより離れていればよけられる
 export const ZOMBIE_RADIUS = 0.35; // ゾンビ同士がかさならないための大きさ
-export const ATTACK_WINDUP_MS = 750; // かみつく前の予備動作(この間に倒せばかじられない)
+export const ATTACK_WINDUP_MS = 1100; // かみつく前の予備動作(この間に倒すか下がれば、かじられない)
+export const ATTACK_GRACE_MS = 3000; // 出てきてからこの時間は、目の前まで来てもかみついてこない
+export const SPAWN_MIN_DIST = 7; // プレイヤーからこれより近くには出てこない(遠くから少しずつ迫ってくる)
+export const GROUND_SPAWN_DIST: [number, number] = [7, 11]; // 地面から這い出てくる距離
 export const BITE_KNOCKBACK_M = 2.5; // かみついた後、これだけ後ろへ下がる
 export const HIT_STAGGER_MS = 220; // 弾が当たってよろける時間(その間は進まない)
 export const HIT_STAGGER_BACK_M = 0.35; // よろけて下がる距離
@@ -61,18 +62,17 @@ export const DYING_MS = 550; // 倒れて消えるまで
 // far: 道の奥の霧から / gap: 建物のすき間や曲がり角・横の道から / door: 家やお店のドアから /
 // prop: 止まっている車などのかげから立ち上がる / ground: 近くの地面から這い出てくる
 export type EntryKind = "far" | "gap" | "door" | "prop" | "ground";
-export const ENTER_SPEED = 1.3; // 路地などから道へ出てくる速さ
-export const EMERGE_MS = 700; // ドアの暗がりから姿をあらわすまで
-export const RISE_MS = 1100; // かげや地面から立ち上がるまで
-export const HORDE_MIN = 3; // 群れでまとめて出てくる数
-export const HORDE_MAX = 5;
-export const HORDE_STAGGER_MS = 380; // 群れの1体ずつの間隔
+export const ENTER_SPEED = 0.7; // 路地などから道へ出てくる速さ(ゆっくり)
+export const EMERGE_MS = 1100; // ドアの暗がりから姿をあらわすまで
+export const RISE_MS = 1700; // かげや地面から立ち上がるまで
+export const TRIGGER_STAGGER_MS = 450; // 地点を通った時に出てくるゾンビの、1体ずつの間隔
 
 export type ZombieKind = "walker" | "runner" | "tank";
 
 export const ZOMBIE_KINDS: Record<ZombieKind, { hp: number; speedMin: number; speedMax: number; size: number; score: number }> = {
-  walker: { hp: 3, speedMin: 1.0, speedMax: 1.35, size: 1, score: 100 },
-  runner: { hp: 2, speedMin: 2.6, speedMax: 3.1, size: 1, score: 150 },
+  // 速さは、ずりずり歩く一歩の勢いがいちばん強い時の速さ(平均するとこの 6割くらい)
+  walker: { hp: 3, speedMin: 0.9, speedMax: 1.2, size: 1, score: 100 },
+  runner: { hp: 2, speedMin: 1.9, speedMax: 2.3, size: 1, score: 150 },
   tank: { hp: 9, speedMin: 0.6, speedMax: 0.75, size: 1.35, score: 300 },
 };
 export const HEADSHOT_BONUS = 100;
@@ -95,14 +95,12 @@ export const PROJECTILE_SCORE = 50;
 export interface StageDef {
   place: string; // 「STAGE 1」の下に出す場所の名前
   bgm: "venus" | "mars" | "mercury";
-  // 場所ごとのザコ戦の長さ。1ステージは3つの場所を順に進み、最後の場所ではザコ戦の後にボスが来る
-  areaWaveMs: [number, number, number];
-  spawnStartMs: number; // ザコの出てくる間隔(始め)
-  spawnEndMs: number; // ザコの出てくる間隔(終わり)。だんだん短くなる
-  maxAlive: number; // 同時に出ているザコの上限
+  // 1ステージは3つの場所を順に進む。ゾンビは、場所の中の決まった地点を通ると出てくる(scenes.ts の triggers)。
+  // このステージでは、1つの地点で出てくる数がこれだけ多くなる
+  extraPerTrigger: number;
   kinds: Partial<Record<ZombieKind, number>>; // 出てくる種類の重み
-  groupMax: number; // 一度に何体まで一緒に出てくるか
-  hordeMs: number; // 群れがまとめて押し寄せてくる間隔
+  maxAlive: number; // ボス戦中に出ているザコの上限
+  groupMax: number; // ボス戦中に一度に何体まで一緒に出てくるか
   bossHp: number;
   bossThrowMs: number; // ボスがものを投げる間隔
   bossChargeMs: number; // ボスが突進してくる間隔
@@ -113,13 +111,10 @@ export const STAGES: StageDef[] = [
   {
     place: "ゆうぐれの じゅうたくがい",
     bgm: "venus",
-    areaWaveMs: [22000, 22000, 10000],
-    spawnStartMs: 2400,
-    spawnEndMs: 1300,
+    extraPerTrigger: 0,
     maxAlive: 5,
     kinds: { walker: 1 },
     groupMax: 1,
-    hordeMs: 14000,
     bossHp: 60,
     bossThrowMs: 2600,
     bossChargeMs: 12000,
@@ -128,13 +123,10 @@ export const STAGES: StageDef[] = [
   {
     place: "よるの しょうてんがい",
     bgm: "mars",
-    areaWaveMs: [24000, 24000, 12000],
-    spawnStartMs: 2000,
-    spawnEndMs: 1000,
+    extraPerTrigger: 1,
     maxAlive: 7,
     kinds: { walker: 3, runner: 1 },
     groupMax: 2,
-    hordeMs: 11000,
     bossHp: 90,
     bossThrowMs: 2100,
     bossChargeMs: 10000,
@@ -143,13 +135,10 @@ export const STAGES: StageDef[] = [
   {
     place: "まよなかの えきまえ",
     bgm: "mercury",
-    areaWaveMs: [26000, 26000, 14000],
-    spawnStartMs: 1700,
-    spawnEndMs: 800,
+    extraPerTrigger: 2,
     maxAlive: 9,
     kinds: { walker: 4, runner: 2, tank: 1 },
     groupMax: 3,
-    hordeMs: 9000,
     bossHp: 130,
     bossThrowMs: 1700,
     bossChargeMs: 8500,

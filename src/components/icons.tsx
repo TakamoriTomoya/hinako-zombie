@@ -115,3 +115,44 @@ export function GrenadeIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function ShotgunIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <rect x="1" y="8" width="21" height="2.6" rx="0.6" />
+      <rect x="1" y="10.8" width="15" height="1.8" rx="0.6" />
+      <rect x="10" y="12.4" width="5" height="2.4" rx="0.6" />
+      <path d="M1 9h4l-1 7H1.5z" />
+    </Icon>
+  );
+}
+
+export function SniperIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <rect x="1" y="10" width="22" height="1.8" rx="0.5" />
+      <rect x="7" y="6.5" width="8" height="2.6" rx="1.3" />
+      <rect x="10" y="9" width="1.5" height="1.5" />
+      <path d="M1 10.5h5l-1.5 6H1.5z" />
+      <path d="M8 11.5h2l-.8 4H7.5z" />
+    </Icon>
+  );
+}
+
+export function FlameIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={0} fill="currentColor">
+      <path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.2-4 2.5-5.2C9.8 10 10.5 12 12 12c0-3-1.5-6 0-10z" />
+    </Icon>
+  );
+}
+
+// 一時停止(縦の2本線)
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 5v14" />
+      <path d="M15 5v14" />
+    </Icon>
+  );
+}

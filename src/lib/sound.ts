@@ -10,7 +10,7 @@ import { SOUND_MUTED_STORAGE_KEY } from "./constants";
 
 export type BgmId = "map" | "venus" | "mars" | "mercury" | "boss";
 export type JingleId = "intro" | "warp" | "win";
-export type SfxId = "shot" | "empty" | "reload" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver" | "mg" | "rocket" | "explosion" | "toss" | "pickup" | "switch" | "clank" | "step" | "heal";
+export type SfxId = "shot" | "hit" | "headshot" | "defeat" | "groan" | "bite" | "throw" | "shatter" | "roar" | "warning" | "bossDefeat" | "gameOver" | "mg" | "rocket" | "explosion" | "toss" | "pickup" | "switch" | "clank" | "step" | "heal" | "shotgun" | "sniper" | "flame";
 
 // lengthは元のWAVでの正確な長さ(秒)。AACに変換すると末尾にわずかな無音が付くことがあるので、
 // ファイルの長さではなくこの長さでループさせて、継ぎ目で途切れないようにする
@@ -38,6 +38,7 @@ const SFX_MIN_INTERVAL_SEC: Partial<Record<SfxId, number>> = {
   defeat: 0.04,
   groan: 1.2, // ゾンビがたくさん出てきても、うめき声はときどきだけ
   explosion: 0.05,
+  flame: 0.12, // かえんほうしゃきは撃ち続けるので、ときどきだけ鳴らす
 };
 
 const UNLOCK_EVENTS = ["pointerdown", "keydown", "touchend", "click"] as const;
@@ -73,6 +74,7 @@ export class SoundManager {
   private musicToken = 0; // 読み込みを待っている間に別の曲へ切り替わった時、古い方を鳴らさないための番号
   private readonly lastSfxAt = new Map<SfxId, number>();
   private muted = loadMuted();
+  private paused = false; // 一時停止中は、曲も効果音も止めておく
   private disposed = false;
 
   constructor() {
@@ -89,6 +91,14 @@ export class SoundManager {
 
   isMuted(): boolean {
     return this.muted;
+  }
+
+  // 一時停止: 鳴っている曲を止め、続きから鳴らせるようにする
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (!this.ctx) return;
+    if (paused) void this.ctx.suspend();
+    else if (document.visibilityState === "visible") void this.ctx.resume();
   }
 
   setMuted(muted: boolean): void {
@@ -238,6 +248,22 @@ export class SoundManager {
         this.tone(now, { type: "square", from: 900, to: 700, dur: 0.03, vol: 0.1 });
         this.tone(now + 0.08, { type: "square", from: 1200, to: 1000, dur: 0.03, vol: 0.1 });
         break;
+      case "shotgun":
+        // ショットガンの「ドンッ」。拳銃より低く太い
+        this.noise(now, { dur: 0.35, vol: 0.6, filterFrom: 4000, filterTo: 150 });
+        this.tone(now, { type: "square", from: 140, to: 35, dur: 0.18, vol: 0.35 });
+        this.tone(now + 0.3, { type: "square", from: 700, to: 500, dur: 0.04, vol: 0.08 });
+        break;
+      case "sniper":
+        // スナイパーの「パキューン」。するどい音と、遠くへひびく音
+        this.noise(now, { dur: 0.12, vol: 0.6, filterFrom: 9000, filterTo: 900 });
+        this.tone(now, { type: "sawtooth", from: 1800, to: 200, dur: 0.35, vol: 0.12 });
+        this.noise(now + 0.05, { dur: 0.7, vol: 0.12, filterFrom: 900, filterTo: 120 });
+        break;
+      case "flame":
+        // 炎の「ゴォー」
+        this.noise(now, { dur: 0.2, vol: 0.28, filterFrom: 1500, filterTo: 600 });
+        break;
       case "heal":
         // ハートを拾った「ポロロン♪」
         [659, 784, 988, 1319].forEach((f, i) => this.tone(now + i * 0.07, { type: "triangle", from: f, to: f, dur: 0.14, vol: 0.2 }));
@@ -251,17 +277,6 @@ export class SoundManager {
         // 車などに当たってはじかれた「カンッ」
         this.tone(now, { type: "square", from: 1500, to: 1100, dur: 0.05, vol: 0.08 });
         this.tone(now, { type: "triangle", from: 2600, to: 2400, dur: 0.12, vol: 0.05 });
-        break;
-      case "empty":
-        // 弾切れの「カチッ」
-        this.tone(now, { type: "square", from: 2200, to: 1800, dur: 0.02, vol: 0.12 });
-        break;
-      case "reload":
-        // マガジンを抜いて入れて、スライドを引く「カチャ、カチャッ、ジャキッ」
-        this.tone(now, { type: "square", from: 1500, to: 900, dur: 0.03, vol: 0.12 });
-        this.tone(now + 0.4, { type: "square", from: 1100, to: 700, dur: 0.04, vol: 0.14 });
-        this.noise(now + 0.78, { dur: 0.09, vol: 0.25, filterFrom: 5000, filterTo: 1500 });
-        this.tone(now + 0.8, { type: "square", from: 900, to: 1600, dur: 0.05, vol: 0.12 });
         break;
       case "hit":
         // 体に当たった「ボスッ」
@@ -451,7 +466,7 @@ export class SoundManager {
   // ほかのタブに移ったら音を止め、戻ってきたら続きから鳴らす
   private onVisibilityChange = (): void => {
     if (!this.ctx) return;
-    if (document.visibilityState === "hidden") void this.ctx.suspend();
+    if (document.visibilityState === "hidden" || this.paused) void this.ctx.suspend();
     else void this.ctx.resume();
   };
 }

@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ZombieEngine, type EngineState, type StartOptions } from "../lib/engine";
 import { loadMuted, SoundManager } from "../lib/sound";
-import { DEV_TOOLS, MAX_AMMO, PLAYER_START_LIVES } from "../lib/constants";
-import type { WeaponId } from "../lib/weapons";
+import { DEV_TOOLS, PLAYER_START_LIVES } from "../lib/constants";
+import { emptyWeaponAmmo, type WeaponId } from "../lib/weapons";
 
 export function useZombieEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -13,16 +13,16 @@ export function useZombieEngine() {
     phase: "home",
     score: 0,
     lives: PLAYER_START_LIVES,
-    ammo: MAX_AMMO,
-    reloading: false,
     weapon: "pistol",
-    weaponAmmo: { mg: 0, rocket: 0, grenade: 0 },
+    weaponAmmo: emptyWeaponAmmo(),
     stage: 1,
     areaName: "",
     stageBanner: null,
     bossHp: null,
     bossWarning: false,
     exitOpen: false,
+    paused: false,
+    advanceHint: false,
     hintVisible: false,
     highScore: 0,
     isNewRecord: false,
@@ -52,7 +52,8 @@ export function useZombieEngine() {
   const [devStart, setDevStart] = useState<Required<StartOptions>>({ stageIndex: 0, startAtBoss: false });
   const startGame = useCallback(() => engineRef.current?.startGame(DEV_TOOLS ? devStart : {}), [devStart]);
   const goHome = useCallback(() => engineRef.current?.goHome(), []);
-  const reload = useCallback(() => engineRef.current?.reload(), []);
+  const pause = useCallback(() => engineRef.current?.setPaused(true), []);
+  const resume = useCallback(() => engineRef.current?.setPaused(false), []);
   const move = useCallback((x: number, y: number) => engineRef.current?.setMoveInput(x, y), []);
   const selectWeapon = useCallback((id: WeaponId) => engineRef.current?.selectWeapon(id), []);
   const toggleMuted = useCallback(() => {
@@ -63,7 +64,7 @@ export function useZombieEngine() {
   }, []);
 
   // useEffect依存配列でactions全体を使えるよう、参照を安定させる
-  const actions = useMemo(() => ({ startGame, goHome, reload, move, selectWeapon, toggleMuted, setDevStart }), [startGame, goHome, reload, move, selectWeapon, toggleMuted]);
+  const actions = useMemo(() => ({ startGame, goHome, move, pause, resume, selectWeapon, toggleMuted, setDevStart }), [startGame, goHome, move, pause, resume, selectWeapon, toggleMuted]);
 
   return { canvasRef, state, muted, devStart, actions };
 }
